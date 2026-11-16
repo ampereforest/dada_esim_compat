@@ -15,6 +15,7 @@ Later results supersede only the named earlier failure; no blanket retroactive P
 | fsverity | Independently checked full selected companions with original unsigned mode | Signed OEM trust |
 | Corrected EROFS/super | fsck/full mounted content+metadata,482 pins/144 links,all LP copies/slots/ranges | Policy neverallows/OEM AVB/new-super hardware boot |
 | Earlier clean-data boot | Owner reports Enforcing,zero modules,automatic Java handoff; old native failed env lookup | Assistant-witnessed flashing or corrected-image reflash |
+| Personal source rebuild | Fresh upstream/submodule fetch and patch check; release/native four-ABI build; RSA4096/v2/v3/16KiB ZIP checks; Android unit-test sources compile | Byte-identical historical APK, Android-test execution, signer/update compatibility or new device acceptance |
 
 ## Final local files (not distributed here)
 

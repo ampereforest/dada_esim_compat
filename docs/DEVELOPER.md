@@ -76,12 +76,17 @@ Changing services.jar requires original non-DEX/raw ZIP record preservation,
 affected services ART/profile/fsverity refresh and all26 changed-CLC dependents.
 Compiler classfiles alone are not installable acceptance.
 
-## 4. Provider007 custom additions and wiring
+## 4. Provider007 unified patch, build and reference additions
 
-`integration/provider-additions/` preserves only custom files **absent from the
-reference upstream tracked tree**. It intentionally omits upstream app/common/lib
-files, Gradle wrapper, JNI/APKs and modified full upstream classes. These additions
-reference independently supplied maintained app classes and are **not standalone**.
+Use `scripts/fetch_and_build_openeuicc.sh` and `patches/openeuicc-dada.patch` for
+the complete selected provider007 source build, including modified upstream classes
+and native LPAC/JNI sources. See the README rebuild section and
+[complete inventory](OPENEUICC_PATCH.md). The script initializes pinned submodules
+before ordinary root-worktree `git apply --check`/`git apply`; no parent gitlink bump.
+
+`integration/provider-additions/` still preserves only custom files **absent from
+the reference upstream tracked tree** as a reference subset. Do not overlay it on
+top of the unified patch; those files are already included. It is not standalone.
 
 Required integration seams in your separately obtained checkout:
 
@@ -99,8 +104,9 @@ Required integration seams in your separately obtained checkout:
    before route UI, invalidate/re-resolve on return and finalize stale entries even
    if remote channel close throws.
 5. Hold Binder-lifetime N3 leases around profile/backend commands. Hide Delete and
-   unsafe last-profile disable, reject Reset/OTA. No upstream profile deletion/reset
-   source is shipped or automatically exercised here.
+   unsafe last-profile disable, reject Reset/OTA. The diff now includes modified
+   upstream deletion/reset source, fenced by policy; it is never automatically
+   exercised by the host build or validation.
 6. After command acceptance request embedded-subscription refresh inside the lease;
    after profile-state verification re-resolve active logical1 context and issue
    scoped carrier-config/actions. `RegistrationObservationWindow` reports settled
@@ -109,7 +115,7 @@ Required integration seams in your separately obtained checkout:
 Keep versionCode/update continuity and the original local signer. A new identity
 requires reviewing **both** owner `CallerPolicy` and bridge `ReleaseContract` pins,
 selection/grants, upgrade compatibility and tests. Never embed the keystore/password
-in Gradle files or commit upstream content to this repository.
+in Gradle files or commit a full upstream checkout, binaries or private build inputs.
 
 N2 installs the APK under `/product/priv-app/OpenEUICC/` and the three-grant XML
 under `/product/etc/permissions/`. Real eUICC feature XML is conditional on actual
@@ -191,9 +197,11 @@ No fastboot/flasher is invoked by any build/repacking script.
 ## 8. Publication checks
 
 Publication-only normalization removed whitespace on two owner blank lines and
-split the synthetic native test EID into string fragments; production behavior
-and corrected native/RC/CIL bytes remain unchanged. Patch blank context markers
-remain exact, with Git whitespace checking disabled **only for `.patch` files**.
+split synthetic native/new Android test identifiers into string fragments;
+production behavior and corrected native/RC/CIL bytes remain unchanged. Historical
+test cases referencing the absent root diagnostics service were excluded. Patch
+context bytes remain exact, with Git whitespace checking disabled **only for
+`.patch` files**. Host tests retain their temporary fixtures without cleanup.
 
 ```sh
 python3 -B tests/test_host_tools.py

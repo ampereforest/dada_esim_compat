@@ -22,6 +22,7 @@ are **not proved**. Do not infer production safety from compilation or this guid
 - [Metadata, EROFS and exact LP super](#metadata-erofs-and-lp-preservation)
 - [Flash findings and manual sequence](#flash-findings--manual-sequence)
 - [Operational caveats](#operational-caveats)
+- [Rebuilding Patched OpenEUICC from Upstream](#rebuilding-patched-openeuicc-from-upstream)
 - [Build/repacking guide](docs/DEVELOPER.md), [evidence ledger](docs/OUTCOMES.md),
   [physicalSlot0 / native Settings roadmap](docs/ROADMAP.md)
 
@@ -38,7 +39,8 @@ are **not proved**. Do not infer production safety from compilation or this guid
 
 The full commit above was verified from the actual checkout; a previously supplied
 shortened/mistyped identifier is not the build pin. Fetch upstream independently
-if needed; **no upstream OpenEUICC source or binaries are bundled here**.
+if needed; no full upstream checkout or binaries are bundled here. The personal
+unified patch includes modified upstream source and the context needed to apply it.
 
 Tuple order is **`port:physicalSlot:logicalSlot`**, not slot:port:phone:
 
@@ -71,7 +73,7 @@ operation. Boots/restarts must not replay a saved route command.
 | **R1** | Exact-board/build guard around Oplus's **post-validation forced physical-type SET**, `patches/r1/` | Keep original startup, GET, phone-count and error paths; all other builds retain original behavior. No guessed early setter. |
 | **R2** | Protected management/provider bridge in `telephony-common`, native OEM GPIO/6033 fencing, `integration/framework/`, `patches/r2/` | Stock TeleService and its platform/sharedUID signature stay intact. No permission/signature exemptions. |
 | **R3** | Fresh **per-card** embedded-subscription reconciliation, custom method fragments under `integration/r3-methods/` | Failure/unknown/incomplete inventory never means successful empty inventory or authority to clear another card. |
-| **N1** | Maintained OpenEUICC's existing EuiccService/LPA, with custom routing/lease/recovery/context additions under `integration/provider-additions/` | These additions are not an independent complete app; obtain and build upstream separately. |
+| **N1** | Maintained OpenEUICC's existing EuiccService/LPA, complete personal diff in `patches/openeuicc-dada.patch`; custom-only reference files in `integration/provider-additions/` | Fetch the pinned upstream and submodules using the build script; additions alone are not a complete app. |
 | **N2** | Three demonstrated product privileged grants and real eUICC feature XML under `config/etc/permissions/` | APK and grant XML must occupy the **same product partition**; no permission catch-all. |
 | **N3** | Single ROM-owned logical1 coordinator in genuine `system_server` plus authenticated init native listener | Durable admission/consent/readbacks/leases, not a root selector or modem replay service. |
 
@@ -374,6 +376,77 @@ RC/CIL/new-super boot has not been demonstrated.
   your own evidence, use `<ADB_SERIAL>`, `<REDACTED_ICCID>`, `<REDACTED_IMSI>`,
   `<REDACTED_MSISDN>`, `<REDACTED_EID>` and `<REDACTED_ACTIVATION_CODE>`.
 
+## Rebuilding Patched OpenEUICC from Upstream
+
+```sh
+git clone https://github.com/ampereforest/dada_esim_compat.git
+cd dada_esim_compat
+export JAVA_HOME=/opt/jdk21
+export ANDROID_HOME=/opt/android-sdk
+# Install API37, build-tools37.0.0 and NDK26.1.10909125; accept SDK licenses.
+BUILD_DIR=/var/tmp/openeuicc-dada-build-001 \
+  bash scripts/fetch_and_build_openeuicc.sh
+```
+
+Use a **new POSIX build directory outside this repository**, with no spaces in
+the build/SDK paths. The script fetches upstream commit
+`b79e03bbf42f4d69b9d9dd21cd6132bb1b9314d7`, initializes pinned recursive LPAC/cJSON
+submodules, checks/applies the unified patch, then builds `:app:assembleRelease`
+with JDK21, Gradle9.5.0 (upstream wrapper), AGP9.3.0 and API37. The user-supplied
+`b79e03bbf42f4d69b9d9dd21cd1b9314d7` is invalid, not an alternative build pin.
+LPAC is pinned to `50cdf15ab40942b00f8819a1c2ca19997f1a6d34`; cJSON to
+`6d9f2443ab071f86e5d9b43025a40929ec41c46c`. Apply from the upstream root
+**after** initializing submodules, without `--index` (the diff edits LPAC's worktree).
+
+The script compiles, and requires, uncompressed `liblpac-jni.so` for **arm64-v8a,
+armeabi-v7a, x86 and x86_64**. It creates a private local RSA4096 PKCS12 key if
+`KEYSTORE_PATH` is absent, aligns with `zipalign -P 16 -f -v 4`, signs with v2/v3,
+and independently checks v2, v3 and final16KiB ZIP alignment. Outputs are:
+
+- `$BUILD_DIR/output/OpenEUICC.apk`
+- `$BUILD_DIR/output/product/etc/permissions/privapp-permissions-openeuicc.xml`
+- Hashes, source pins, build/alignment and public certificate verification logs.
+
+The key and generated password remain under `$BUILD_DIR/signing/`, **never Git**.
+For an existing key, set `KEYSTORE_PATH`, `KEY_ALIAS` and
+`KEYSTORE_PASSWORD_FILE` (private file outside Git); `KEY_PASSWORD` optionally
+supplies a separate key password. `--help` describes Gradle/cache/offline options.
+No install, device commands, route operations or cleanup are performed; every
+checkout and failed output is retained. The product XML grants exactly three
+permissions; APK and XML must be integrated on the same product partition.
+
+**Signing/runtime boundary:** a new key cannot update the historical signer or
+authenticate against unchanged ROM owner `CallerPolicy` and bridge `ReleaseContract`
+certificate pins. Repin both deliberately and perform legitimate upgrade/ROM
+integration. This recipe reproduces the **selected patched source and build steps**,
+not byte-identical provider007 output: historical provider007 reused prebuilt JNI;
+this recipe recompiles it, and toolchains/signing identity can change APK bytes.
+It does not build the separate ROM owner, framework, policy or firmware images.
+
+### Complete patch change coverage
+
+The unified diff covers **125 paths**, including tracked upstream edits and custom
+untracked additions; the [per-file inventory](docs/OPENEUICC_PATCH.md) lists every path.
+
+| Scope | Changes |
+| --- | --- |
+| Shared channel/context/service | Fresh card/port/generation identity, operation coordination, admission/leases, channel-cache invalidation and logical APDU closure; OMAPI, USB CCID and telephony cleanup/error handling. |
+| Shared UI and downloads | Bound/context-aware activities, scoped profile enable/disable/rename/download/notification flows; Delete safeguard and reset/last-profile-disable fencing; wizard validation, diagnostics redaction and error propagation. |
+| Privileged provider007 | Provider006 direct synchronous UID1000 Binder offer authentication, existing EuiccService dispatch with download/context fences, logical1 leases, profile-switch recovery and scoped embedded-subscription/carrier-config refresh. |
+| Route/management UI | Protected exact secret-code3418 receiver; Manage entry and `DadaRouteChoiceActivity`, explicit proposal/consent/confirmation, safety checks and recovery-aware abort reporting; no launcher/QS; close channels before routing and re-resolve on return. Obsolete `SlotMappingFragment` is removed from rebuilt source. |
+| Protocol/privacy/resources | ROM-owner client/protocol and allowlisted reports, read-only in-process LPA diagnostics (no exported root diagnostics service), `FLAG_SECURE`, private backup/extraction settings, manifests/layouts/strings and three-grant product XML. |
+| JNI/LPAC | Kotlin/native data and error contracts; JNI exception/allocation/reference/transport cleanup and download/notification propagation; bounded DER/Base64/UTF8/JSON, EID and complete profile-inventory parsing, ES8+/ES9+/ES10 response validation, atomic outputs and failure cleanup across18 nested LPAC paths. |
+| Build/tests | Restore native source compilation, explicitly select four ABIs,16KiB native link alignment, external signing, pin generatebp1.4; update Robolectric fixtures/tests for contexts, leases, download/route/secret-code safety, diagnostics and registration observations. |
+
+Publication normalization constructs new synthetic test identifiers from fragments
+and uses minimal valid context without personal data. Unmodified upstream fixtures
+are not rewritten. Tests targeting the absent historical `LpaDiagnosticsService`
+were excluded from the two retained test classes, not reintroduced as production
+endpoints. Remaining Android tests are separate from release compilation; see the
+validation ledger for actual results, not an implied historical-test PASS. Fresh
+network-fetch/patch/release/four-ABI/signing/alignment validation **passed**, as did
+remaining Android unit-test source compilation; Android unit tests were not executed.
+
 ## Repository safety and scope
 
 Run `python3 -B tests/test_host_tools.py` and `python3 -B scripts/source_guard.py`
@@ -384,7 +457,9 @@ review of carrier names, screenshots, logs, serials or upstream file provenance.
 
 No firmware/APK/JAR/DEX/native binaries, full proprietary disassemblies, upstream
 OpenEUICC checkout, private audit outputs, toolchains or signing material are shipped.
-The selected custom additions are not a turnkey reproducer of every historical build.
+The unified OpenEUICC diff includes modified upstream source/context, but no full
+checkout; custom-only reference additions remain separately available. Neither
+the APK recipe nor those additions reproduce every historical ROM build.
 All old originals, accepted artifacts, failed receipts and POSIX/toolchain/signing
 workspaces remain local. **No workspace cleanup is authorized by publishing this
 repository; selective deletion requires separate explicit approval.**
