@@ -1,0 +1,2 @@
+# Legacy declaration retained in the final image; corrected RC never sets a latch.
+sys.n3.route.boot_attempted u:object_r:n3_route_boot_prop:s0 exact int

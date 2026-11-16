@@ -1,0 +1,17 @@
+--- a/com/oplus/internal/telephony/OplusTelephonyExtServiceImpl.smali
++++ b/com/oplus/internal/telephony/OplusTelephonyExtServiceImpl.smali
+@@ -2761,6 +2761,14 @@
+ 
+ .method public requestTelephonyEvent(IILandroid/os/Bundle;)Landroid/os/Bundle;
+     .registers 12
++
++    # R2-v2: SET_GPIO6033 only, BEFORE manager/submission. Original unavailable = null.
++    invoke-static {p2}, Lcom/android/internal/telephony/euicc/NativeRouteIngress;->rejectEvent(I)Z
++    move-result v0
++    if-eqz v0, :r2_event_original
++    const/4 v0, 0x0
++    return-object v0
++    :r2_event_original
+ 
+     .line 3060
+     const-string v0, "OplusTelephonyExtServiceImpl"

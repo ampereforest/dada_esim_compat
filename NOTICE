@@ -1,0 +1,12 @@
+Standalone personal engineering documentation and custom integration drafts.
+Not an official Xiaomi, OnePlus, Oplus, Google or OpenEUICC project or release.
+
+No upstream OpenEUICC checkout, upstream binary, firmware dump, signing key or
+carrier/profile record is distributed here. Provider additions are custom files
+absent from the referenced upstream tracked tree, not a vendored application.
+Android/Oplus patch contexts and API names identify interoperability targets;
+their respective owners retain rights in pre-existing material.
+
+No blanket relicensing of third-party material is asserted. This repository has
+no general license grant. Obtain the appropriate permissions before redistribution.
+Documentation was prepared with AI assistance from local engineering records.

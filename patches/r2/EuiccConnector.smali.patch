@@ -1,0 +1,31 @@
+--- a/com/android/internal/telephony/euicc/EuiccConnector.smali
++++ b/com/android/internal/telephony/euicc/EuiccConnector.smali
+@@ -341,6 +341,15 @@
+     .line 1188
+     iget-object v0, p0, Lcom/android/internal/telephony/euicc/EuiccConnector;->mSelectedComponent:Landroid/content/pm/ServiceInfo;
+ 
++    # R2: no signer/permission bypass and no privileged bind on unknown scope.
++    iget-object v1, p0, Lcom/android/internal/telephony/euicc/EuiccConnector;->mContext:Landroid/content/Context;
++    invoke-static {v1, v0}, Lcom/android/internal/telephony/euicc/DadaFrameworkBridge;->allowBinding(Landroid/content/Context;Landroid/content/pm/ServiceInfo;)Z
++    move-result v1
++    if-nez v1, :r2_binding_allowed
++    const/4 v0, 0x0
++    return v0
++    :r2_binding_allowed
++
+     if-nez v0, :cond_d
+ 
+     .line 1189
+@@ -494,6 +503,12 @@
+     invoke-static {p0, v2}, Lcom/android/internal/telephony/euicc/EuiccConnector;->isValidEuiccComponent(Landroid/content/pm/PackageManager;Landroid/content/pm/ResolveInfo;)Z
+ 
+     move-result v3
++
++    # R2: restrictive identity check AFTER unchanged original permission validation.
++    if-eqz v3, :r2_candidate_checked
++    invoke-static {p0, v2}, Lcom/android/internal/telephony/euicc/DadaFrameworkBridge;->allowCandidate(Landroid/content/pm/PackageManager;Landroid/content/pm/ResolveInfo;)Z
++    move-result v3
++    :r2_candidate_checked
+ 
+     if-nez v3, :cond_1c
+ 

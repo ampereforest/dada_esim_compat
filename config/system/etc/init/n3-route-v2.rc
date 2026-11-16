@@ -1,0 +1,23 @@
+# Listener-only startup. Java durable journal governs admissions, never init replay.
+on post-fs-data
+    mkdir /data/system/n3-routing-v2 0700 system system
+    restorecon_recursive /data/system/n3-routing-v2
+
+# start is idempotent if already running; no permanent attempted latch.
+on boot
+    start n3-route-v2
+
+# Finite framework-ready fallback, not boot-completed polling or command replay.
+on property:sys.boot_completed=1
+    start n3-route-v2
+
+service n3-route-v2 /system/bin/n3-route-v2
+    class main
+    user root
+    group root
+    seclabel u:r:n3_route:s0
+    socket n3-route-v2 stream 0600 system system u:r:n3_route:s0
+    disabled
+    # Normal init reaps/kills the whole service process group before restart.
+    # Native stops admission on an unresolved child; a restart only listens.
+    restart_period 5

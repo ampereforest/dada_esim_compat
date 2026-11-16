@@ -1,0 +1,17 @@
+--- a/com/oplus/internal/telephony/OplusEsimController.smali
++++ b/com/oplus/internal/telephony/OplusEsimController.smali
+@@ -4132,6 +4132,14 @@
+ 
+ .method private setEsimGpio(IZ)I
+     .registers 4
++
++    # R2-v2: no unauthenticated GPIO-to-owner forwarding, BEFORE deferred thread/locks.
++    invoke-static {}, Lcom/android/internal/telephony/euicc/NativeRouteIngress;->rejectLegacyGpio()Z
++    move-result v0
++    if-eqz v0, :r2_gpio_original
++    const/4 v0, -0x1
++    return v0
++    :r2_gpio_original
+ 
+     if-nez p2, :cond_1e
+ 

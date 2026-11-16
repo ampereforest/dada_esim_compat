@@ -1,0 +1,24 @@
+--- a/com/android/internal/telephony/euicc/EuiccConnector$ConnectedState.smali
++++ b/com/android/internal/telephony/euicc/EuiccConnector$ConnectedState.smali
+@@ -221,6 +221,21 @@
+     invoke-static {p1}, Lcom/android/internal/telephony/euicc/EuiccConnector;->-$$Nest$smgetCallback(Landroid/os/Message;)Lcom/android/internal/telephony/euicc/EuiccConnector$BaseEuiccCommandCallback;
+ 
+     move-result-object v2
++
++    # R2: unavailable ownership reports REAL callback failure, BEFORE commandStart.
++    iget-object v3, p0, Lcom/android/internal/telephony/euicc/EuiccConnector$ConnectedState;->this$0:Lcom/android/internal/telephony/euicc/EuiccConnector;
++    invoke-static {v3}, Lcom/android/internal/telephony/euicc/EuiccConnector;->-$$Nest$fgetmSelectedComponent(Lcom/android/internal/telephony/euicc/EuiccConnector;)Landroid/content/pm/ServiceInfo;
++    move-result-object v5
++    invoke-static {v3}, Lcom/android/internal/telephony/euicc/EuiccConnector;->-$$Nest$fgetmContext(Lcom/android/internal/telephony/euicc/EuiccConnector;)Landroid/content/Context;
++    move-result-object v3
++    iget v6, p1, Landroid/os/Message;->arg1:I
++    iget v7, p1, Landroid/os/Message;->what:I
++    invoke-static {v3, v5, v6, v7}, Lcom/android/internal/telephony/euicc/DadaFrameworkBridge;->allowCommand(Landroid/content/Context;Landroid/content/pm/ServiceInfo;II)Z
++    move-result v3
++    if-nez v3, :r2_command_allowed
++    invoke-interface {v2}, Lcom/android/internal/telephony/euicc/EuiccConnector$BaseEuiccCommandCallback;->onEuiccServiceUnavailable()V
++    return v4
++    :r2_command_allowed
+ 
+     .line 783
+     iget-object v3, p0, Lcom/android/internal/telephony/euicc/EuiccConnector$ConnectedState;->this$0:Lcom/android/internal/telephony/euicc/EuiccConnector;

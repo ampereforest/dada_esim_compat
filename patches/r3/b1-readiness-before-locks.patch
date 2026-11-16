@@ -1,0 +1,37 @@
+--- a/com/android/internal/telephony/subscription/SubscriptionDatabaseManager.smali
++++ b/com/android/internal/telephony/subscription/SubscriptionDatabaseManager.smali
+@@ -8454,3 +8454,20 @@
+     move-result-object v0
+     return-object v0
+ .end method
++
++# B1: the same instance monitor is held through protected initial load and its true write.
++# Read only; no write lock, callback, schema/cache mutation, or readiness reset.
++.method public blacklist isDatabaseInitializedForEmbeddedSubscriptionUpdate()Z
++    .locals 1
++    monitor-enter p0
++    :ready_start
++    iget-boolean v0, p0, Lcom/android/internal/telephony/subscription/SubscriptionDatabaseManager;->mDatabaseInitialized:Z
++    :ready_end
++    .catchall {:ready_start .. :ready_end} :ready_exception
++    monitor-exit p0
++    return v0
++    :ready_exception
++    move-exception v0
++    monitor-exit p0
++    throw v0
++.end method
+--- a/com/android/internal/telephony/subscription/SubscriptionManagerService.smali
++++ b/com/android/internal/telephony/subscription/SubscriptionManagerService.smali
+@@ -5039,6 +5039,11 @@
+     iget v10, p1, Lcom/android/internal/telephony/uicc/EmbeddedSubscriptionSnapshot;->cardId:I
+     new-instance v4, Landroid/util/ArraySet;
+     invoke-direct {v4}, Landroid/util/ArraySet;-><init>()V
++    # B1: wait/read on the initializer's instance monitor BEFORE any acceptance lock setup.
++    iget-object v6, p0, Lcom/android/internal/telephony/subscription/SubscriptionManagerService;->mSubscriptionDatabaseManager:Lcom/android/internal/telephony/subscription/SubscriptionDatabaseManager;
++    invoke-virtual {v6}, Lcom/android/internal/telephony/subscription/SubscriptionDatabaseManager;->isDatabaseInitializedForEmbeddedSubscriptionUpdate()Z
++    move-result v6
++    if-eqz v6, :early_defer
+     invoke-static {}, Lcom/android/internal/telephony/uicc/UiccController;->getEmbeddedSubscriptionLock()Ljava/lang/Object;
+     move-result-object v0
+     iget-object v1, p1, Lcom/android/internal/telephony/uicc/EmbeddedSubscriptionSnapshot;->slot:Lcom/android/internal/telephony/uicc/UiccSlot;

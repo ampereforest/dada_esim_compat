@@ -1,0 +1,42 @@
+{
+  "device_size": 11811160064,
+  "prefix_bytes": 405504,
+  "prefix_sha256": "535aa720786350cd02658491f7363dceb0dc93b820cde5d52e265c2e2ad6c968",
+  "partitions": [
+    {
+      "name": "odm_a",
+      "offset": 1048576,
+      "size": 3415171072
+    },
+    {
+      "name": "product_a",
+      "offset": 3416260608,
+      "size": 617418752
+    },
+    {
+      "name": "system_a",
+      "offset": 4033871872,
+      "size": 5115437056
+    },
+    {
+      "name": "system_dlkm_a",
+      "offset": 9149874176,
+      "size": 15294464
+    },
+    {
+      "name": "system_ext_a",
+      "offset": 9165602816,
+      "size": 879345664
+    },
+    {
+      "name": "vendor_a",
+      "offset": 10045358080,
+      "size": 685940736
+    },
+    {
+      "name": "vendor_dlkm_a",
+      "offset": 10732175360,
+      "size": 88477696
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+--- a/com/android/internal/telephony/PhoneFactory.smali
++++ b/com/android/internal/telephony/PhoneFactory.smali
+@@ -1753,7 +1753,7 @@
+     :goto_1f7
+     monitor-exit v0
+ 
+-    return-void
++    goto :r2_original_init_done
+ 
+     :goto_1f9
+     monitor-exit v0
+@@ -1761,6 +1761,10 @@
+     .catchall {:try_start_1ef .. :try_end_1fa} :catchall_2e
+ 
+     throw p0
++
++    :r2_original_init_done
++    invoke-static {}, Lcom/android/internal/telephony/euicc/N3PhoneReadbackBootstrap;->afterOriginalPhoneInit()V
++    return-void
+ .end method
+ 
+ .method public static blacklist makeDefaultPhones(Landroid/content/Context;Lcom/android/internal/hidden_from_bootclasspath/com/android/internal/telephony/flags/FeatureFlags;)V

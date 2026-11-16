@@ -1,0 +1,81 @@
+--- a/com/oplus/internal/telephony/OplusUiccManagerImpl.smali
++++ b/com/oplus/internal/telephony/OplusUiccManagerImpl.smali
+@@ -1419,12 +1419,27 @@
+     if-eqz p0, :cond_7a
+ 
+     aget-object p0, p0, v3
+ 
+     if-eqz p0, :cond_7a
+ 
++    # R1: preserve validated modem state only on the verified dada build.
++    # Keep the original response, phone-count and RIL error paths above.
++    invoke-static {}, Lcom/oplus/internal/telephony/OplusUiccManagerImpl;->isDadaEsimPreservationBuild()Z
++
++    move-result v2
++
++    if-eqz v2, :cond_r1_force_physical_set
++
++    const-string v2, "handleEsimCheckModemStatusResponse: preserve modem SIM type on supported dada build"
++
++    invoke-static {v2}, Lcom/oplus/internal/telephony/OplusUiccManagerImpl;->logd(Ljava/lang/String;)V
++
++    return-void
++
++    :cond_r1_force_physical_set
+     .line 2202
+     invoke-interface {p0, p1, v0}, Lcom/oplus/internal/telephony/CommandsInterfaceExt;->setSimType(Landroid/os/Message;[Lcom/oplus/telephony/SimType;)V
+ 
+     return-void
+ 
+     .line 2204
+@@ -2388,12 +2403,50 @@
+     goto :goto_b
+ 
+     :cond_21
+     return v2
+ .end method
+ 
++.method private static isDadaEsimPreservationBuild()Z
++    .registers 2
++
++    # Exact readonly board/build allowlist; no EID, choice or feature gating.
++    const-string v0, "ro.product.device"
++
++    invoke-static {v0}, Landroid/os/SystemProperties;->get(Ljava/lang/String;)Ljava/lang/String;
++
++    move-result-object v0
++
++    const-string v1, "dada"
++
++    invoke-virtual {v1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++
++    move-result v0
++
++    if-eqz v0, :cond_r1_unsupported_build
++
++    const-string v0, "ro.build.fingerprint"
++
++    invoke-static {v0}, Landroid/os/SystemProperties;->get(Ljava/lang/String;)Ljava/lang/String;
++
++    move-result-object v0
++
++    const-string v1, "OnePlus/PLZ110/OP64DDL1:17/CP2A.260605.016/B.2a5e7c5-41b0cd-45d7d3:user/release-keys"
++
++    invoke-virtual {v1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++
++    move-result v0
++
++    return v0
++
++    :cond_r1_unsupported_build
++    const/4 v0, 0x0
++
++    return v0
++.end method
++
+ .method private isNrjChangeToProximus(Lcom/android/internal/telephony/uicc/IccRecords;)Z
+     .registers 4
+ 
+     const/4 p0, 0x0
+ 
+     if-eqz p1, :cond_8
