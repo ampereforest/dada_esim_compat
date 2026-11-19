@@ -2,9 +2,14 @@
 /.local/
 /out/
 /build/
+**/build/
 **/.gradle/
 **/__pycache__/
 *.pyc
+*.jpg
+*.jpeg
+*.png
+*.webp
 *.img
 *.ext4
 *.apk

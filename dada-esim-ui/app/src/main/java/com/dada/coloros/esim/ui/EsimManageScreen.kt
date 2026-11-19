@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,28 +22,23 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.QrCodeScanner
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SimCard
-import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,8 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,10 +63,14 @@ import com.dada.coloros.esim.ui.components.CouiRow
 import com.dada.coloros.esim.ui.components.CouiRowPosition
 import com.dada.coloros.esim.ui.components.CouiSmallTitle
 import com.dada.coloros.esim.ui.components.CouiSwitch
+import com.dada.coloros.esim.ui.components.CouiSwitchRow
 import com.dada.coloros.esim.ui.components.CouiTopAppBar
+import com.dada.coloros.esim.ui.components.couiBouncyOverscroll
 import com.dada.coloros.esim.ui.components.couiRowPositionOf
+import com.dada.coloros.esim.ui.components.performCouiSwitchHaptic
 import com.dada.coloros.esim.ui.theme.CouiTheme
-import com.kyant.capsule.ContinuousCapsule
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.capsule.ContinuousRoundedRectangle
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,12 +88,9 @@ fun EsimManageScreen(
 ) {
     val colors = CouiTheme.colors
     val context = LocalContext.current
+    val view = LocalView.current
     val listState = rememberLazyListState()
-    val showTopDivider by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 16
-        }
-    }
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     var selectedProfile by remember { mutableStateOf<EsimProfile?>(null) }
     var showAddSheet by remember { mutableStateOf(false) }
@@ -105,367 +103,265 @@ fun EsimManageScreen(
     val isEsim = route?.isEsim == true
     val eid = route?.eid?.takeIf { it.isNotBlank() }
         ?: state.profiles.firstOrNull { it.eid.isNotBlank() }?.eid.orEmpty()
+    val backdrop = rememberLayerBackdrop()
 
-    Scaffold(
-        containerColor = colors.surface,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            CouiTopAppBar(
-                title = "Manage eSIM",
-                onBack = onBack,
-                showBottomDivider = showTopDivider,
-                actions = {
-                    IconButton(onClick = onRefresh) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = "Refresh",
-                            tint = colors.onSurface,
-                        )
-                    }
-                },
-            )
-        },
-    ) { innerPadding ->
-        LazyColumn(
-            state = listState,
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.surface),
+    ) {
+        // Scrollable content container captured by LayerBackdrop for real-time Liquid Glass refraction
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .navigationBarsPadding(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                .layerBackdrop(backdrop)
+                .background(colors.surface),
         ) {
-            if (!state.bannerMessage.isNullOrEmpty()) {
-                item(key = "banner") {
-                    val bannerShape = ContinuousRoundedRectangle(14.dp)
-                    val bg = if (state.bannerIsError) colors.errorContainer else colors.tertiaryContainer
-                    val fg = if (state.bannerIsError) colors.error else colors.onTertiaryContainer
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                            .clip(bannerShape)
-                            .background(bg, bannerShape)
-                            .clickable(onClick = onClearBanner)
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = state.bannerMessage,
-                            style = CouiTheme.typography.body,
-                            color = fg,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
-            }
-
-            // 1. SIM 2 / eSIM Hardware Mode Card (Squircle Card)
-            item(key = "hardware_mode") {
-                CouiCard {
-                    CouiRow(
-                        position = if (eid.isNotEmpty()) CouiRowPosition.Head else CouiRowPosition.Full,
-                        startContent = {
-                            val badgeShape = ContinuousRoundedRectangle(10.dp)
-                            val badgeBg = if (isEsim) colors.tertiaryContainer else colors.secondaryVariant
-                            val badgeTint = if (isEsim) colors.primary else colors.onSurfaceSecondary
-                            Box(
+            CompositionLocalProvider(LocalOverscrollFactory provides null) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .couiBouncyOverscroll()
+                        .navigationBarsPadding(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = statusBarTop + 68.dp,
+                        bottom = 28.dp,
+                    ),
+                ) {
+                    if (!state.bannerMessage.isNullOrEmpty()) {
+                        item(key = "banner") {
+                            val bannerShape = ContinuousRoundedRectangle(16.dp)
+                            val bg = if (state.bannerIsError) colors.errorContainer else colors.tertiaryContainer
+                            val fg = if (state.bannerIsError) colors.error else colors.onTertiaryContainer
+                            Row(
                                 modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(badgeShape)
-                                    .background(badgeBg, badgeShape),
-                                contentAlignment = Alignment.Center,
+                                    .fillMaxWidth()
+                                    .padding(bottom = 12.dp)
+                                    .clip(bannerShape)
+                                    .background(bg, bannerShape)
+                                    .clickable(onClick = onClearBanner)
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.SimCard,
-                                    contentDescription = null,
-                                    tint = badgeTint,
-                                    modifier = Modifier.size(21.dp),
+                                Text(
+                                    text = state.bannerMessage,
+                                    style = CouiTheme.typography.body,
+                                    color = fg,
+                                    modifier = Modifier.weight(1f),
                                 )
                             }
-                        },
-                        endContent = {
-                            CouiSwitch(
+                        }
+                    }
+
+                    // 1. SIM 2 / eSIM Hardware Mode Card (clean ColorOS 17 card, no bulky icon box, no inline pills)
+                    item(key = "hardware_mode") {
+                        CouiCard {
+                            CouiSwitchRow(
                                 checked = isEsim,
                                 enabled = !state.loadingInitial && route?.durablePending != true,
                                 isLoading = state.switchingRoute,
+                                position = if (eid.isNotEmpty()) CouiRowPosition.Head else CouiRowPosition.Full,
                                 onCheckedChange = { targetEsim ->
                                     onSwitchRoute(targetEsim)
                                 },
-                            )
-                        },
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = "Use eSIM on SIM 2",
-                                style = CouiTheme.typography.rowTitle,
-                                color = colors.onSurface,
-                            )
-                            val pillShape = ContinuousCapsule
-                            Box(
-                                modifier = Modifier
-                                    .clip(pillShape)
-                                    .background(
-                                        if (isEsim) colors.tertiaryContainer else colors.secondaryVariant,
-                                        pillShape,
-                                    )
-                                    .padding(horizontal = 8.dp, vertical = 2.dp),
                             ) {
                                 Text(
-                                    text = when {
-                                        state.loadingInitial && route == null -> "Checking"
-                                        isEsim -> "eSIM"
-                                        route?.mode == "PSIM2" -> "Physical SIM 2"
-                                        else -> "Unknown"
-                                    },
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (isEsim) colors.onTertiaryContainer else colors.onSurfaceSecondary,
+                                    text = "Use eSIM on SIM 2",
+                                    style = CouiTheme.typography.rowTitle,
+                                    color = colors.onSurface,
+                                )
+                                val sub = when {
+                                    state.loadingInitial && route == null ->
+                                        "Checking SIM 2 routing…"
+                                    route?.durablePending == true ->
+                                        "Hardware route switch pending reconciliation"
+                                    isEsim ->
+                                        "SIM slot 2 is routed to Embedded eSIM"
+                                    else ->
+                                        "SIM slot 2 is routed to Physical SIM card 2"
+                                }
+                                Text(
+                                    text = sub,
+                                    style = CouiTheme.typography.summary,
+                                    color = colors.onSurfaceVariantSummary,
+                                    modifier = Modifier.padding(top = 2.dp),
                                 )
                             }
-                        }
-                        val sub = when {
-                            route?.durablePending == true ->
-                                "Hardware route switch reconciliation pending; tap Refresh"
-                            isEsim ->
-                                "SIM slot 2 is routed to Embedded eSIM"
-                            else ->
-                                "SIM slot 2 is routed to Physical SIM card 2"
-                        }
-                        Text(
-                            text = sub,
-                            style = CouiTheme.typography.summary,
-                            color = colors.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
 
-                    if (eid.isNotEmpty()) {
-                        CouiDivider()
-                        CouiRow(
-                            position = CouiRowPosition.Tail,
-                            onClick = { copyToClipboard(context, "EID", eid) },
-                            endContent = {
-                                val chipShape = ContinuousCapsule
-                                Row(
-                                    modifier = Modifier
-                                        .clip(chipShape)
-                                        .background(colors.secondaryVariant, chipShape)
-                                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
+                            if (eid.isNotEmpty()) {
+                                CouiDivider()
+                                CouiRow(
+                                    position = CouiRowPosition.Tail,
+                                    onClick = {
+                                        performCouiSwitchHaptic(view)
+                                        copyToClipboard(context, "EID", eid)
+                                    },
+                                    endContent = {
+                                        Text(
+                                            text = "Copy",
+                                            style = CouiTheme.typography.body.copy(fontWeight = FontWeight.Medium),
+                                            color = colors.primary,
+                                        )
+                                    },
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.ContentCopy,
-                                        contentDescription = "Copy EID",
-                                        tint = colors.onSurfaceSecondary,
-                                        modifier = Modifier.size(14.dp),
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "Copy",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
+                                        text = "eUICC ID (EID)",
+                                        style = CouiTheme.typography.rowTitle,
                                         color = colors.onSurface,
                                     )
-                                }
-                            },
-                        ) {
-                            Text(
-                                text = "eUICC ID (EID)",
-                                style = CouiTheme.typography.rowTitle,
-                                color = colors.onSurface,
-                            )
-                            Text(
-                                text = formatEid(eid),
-                                style = CouiTheme.typography.summary.copy(fontFamily = FontFamily.Monospace),
-                                color = colors.onSurfaceVariantSummary,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
-                        }
-                    }
-                }
-            }
-
-            // 2. eSIM Profiles Card Group
-            item(key = "profiles_header") {
-                Spacer(modifier = Modifier.height(8.dp))
-                CouiSmallTitle(text = "eSIM Profiles")
-            }
-
-            item(key = "profiles_card") {
-                CouiCard {
-                    when {
-                        !isEsim -> {
-                            CouiRow(position = CouiRowPosition.Full) {
-                                Text(
-                                    text = "eSIM hardware is currently inactive",
-                                    style = CouiTheme.typography.rowTitle,
-                                    color = colors.onSurface,
-                                )
-                                Text(
-                                    text = "Turn on \"Use eSIM on SIM 2\" above to view, switch, or download eSIM profiles.",
-                                    style = CouiTheme.typography.summary,
-                                    color = colors.onSurfaceVariantSummary,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                )
-                            }
-                        }
-
-                        state.profiles.isEmpty() -> {
-                            CouiRow(position = CouiRowPosition.Full) {
-                                Text(
-                                    text = if (state.loadingInitial) "Loading eSIM profiles…" else "No eSIM profiles installed",
-                                    style = CouiTheme.typography.rowTitle,
-                                    color = colors.onSurface,
-                                )
-                                Text(
-                                    text = "Tap \"Add eSIM\" below to scan a QR code or enter an activation code.",
-                                    style = CouiTheme.typography.summary,
-                                    color = colors.onSurfaceVariantSummary,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                )
-                            }
-                        }
-
-                        else -> {
-                            state.profiles.forEachIndexed { index, profile ->
-                                if (index > 0) CouiDivider()
-                                val title = profile.displayName.ifEmpty {
-                                    profile.providerName.ifEmpty { "eSIM Profile ${index + 1}" }
-                                }
-                                val providerSubtitle = buildString {
-                                    if (profile.providerName.isNotEmpty() && profile.providerName != title) {
-                                        append(profile.providerName)
-                                        append(" • ")
-                                    }
-                                    append(formatIccid(profile.iccid))
-                                }
-                                CouiRow(
-                                    position = couiRowPositionOf(index, state.profiles.size),
-                                    onClick = { selectedProfile = profile },
-                                    endContent = {
-                                        CouiSwitch(
-                                            checked = profile.enabled,
-                                            isLoading = state.switchingProfileIccid == profile.iccid,
-                                            enabled = state.busyTitle == null,
-                                            onCheckedChange = { enable ->
-                                                onSetProfileEnabled(profile, enable)
-                                            },
-                                        )
-                                    },
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        Text(
-                                            text = title,
-                                            style = CouiTheme.typography.rowTitle,
-                                            color = colors.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        if (profile.enabled) {
-                                            val pill = ContinuousCapsule
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(pill)
-                                                    .background(colors.successContainer, pill)
-                                                    .padding(horizontal = 7.dp, vertical = 2.dp),
-                                            ) {
-                                                Text(
-                                                    text = "Active",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = colors.success,
-                                                )
-                                            }
-                                        }
-                                    }
                                     Text(
-                                        text = providerSubtitle,
-                                        style = CouiTheme.typography.summary,
+                                        text = formatEid(eid),
+                                        style = CouiTheme.typography.summary.copy(fontFamily = FontFamily.Monospace),
                                         color = colors.onSurfaceVariantSummary,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.padding(top = 2.dp),
                                     )
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            // 3. Add eSIM Card Row
-            item(key = "add_esim_card") {
-                Spacer(modifier = Modifier.height(12.dp))
-                CouiCard {
-                    CouiArrowRow(
-                        title = "Add eSIM",
-                        summary = if (isEsim) {
-                            "Scan a carrier QR code or enter activation code"
-                        } else {
-                            "Switch SIM 2 to eSIM to download a new profile"
-                        },
-                        enabled = isEsim && state.busyTitle == null,
-                        position = CouiRowPosition.Full,
-                        startContent = {
-                            val iconShape = ContinuousRoundedRectangle(10.dp)
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(iconShape)
-                                    .background(
-                                        if (isEsim) colors.tertiaryContainer else colors.secondaryVariant,
-                                        iconShape,
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Add,
-                                    contentDescription = null,
-                                    tint = if (isEsim) colors.primary else colors.onSurfaceVariantActions,
-                                    modifier = Modifier.size(20.dp),
-                                )
+                    // 2. eSIM Profiles Card Group
+                    item(key = "profiles_header") {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        CouiSmallTitle(text = "eSIM Profiles")
+                    }
+
+                    item(key = "profiles_card") {
+                        CouiCard {
+                            when {
+                                !isEsim -> {
+                                    CouiRow(position = CouiRowPosition.Full) {
+                                        Text(
+                                            text = "eSIM hardware is currently inactive",
+                                            style = CouiTheme.typography.rowTitle,
+                                            color = colors.onSurface,
+                                        )
+                                        Text(
+                                            text = "Turn on \"Use eSIM on SIM 2\" above to view, switch, or download eSIM profiles.",
+                                            style = CouiTheme.typography.summary,
+                                            color = colors.onSurfaceVariantSummary,
+                                            modifier = Modifier.padding(top = 2.dp),
+                                        )
+                                    }
+                                }
+
+                                state.profiles.isEmpty() -> {
+                                    CouiRow(position = CouiRowPosition.Full) {
+                                        Text(
+                                            text = if (state.loadingInitial) "Loading eSIM profiles…" else "No eSIM profiles installed",
+                                            style = CouiTheme.typography.rowTitle,
+                                            color = colors.onSurface,
+                                        )
+                                        Text(
+                                            text = "Tap \"Add eSIM\" below to scan a QR code or enter an activation code.",
+                                            style = CouiTheme.typography.summary,
+                                            color = colors.onSurfaceVariantSummary,
+                                            modifier = Modifier.padding(top = 2.dp),
+                                        )
+                                    }
+                                }
+
+                                else -> {
+                                    state.profiles.forEachIndexed { index, profile ->
+                                        if (index > 0) CouiDivider()
+                                        val title = profile.displayName.ifEmpty {
+                                            profile.providerName.ifEmpty { "eSIM Profile ${index + 1}" }
+                                        }
+                                        val providerSubtitle = buildString {
+                                            if (profile.providerName.isNotEmpty() && profile.providerName != title) {
+                                                append(profile.providerName)
+                                                append(" • ")
+                                            }
+                                            append(formatIccid(profile.iccid))
+                                        }
+                                        CouiRow(
+                                            position = couiRowPositionOf(index, state.profiles.size),
+                                            onClick = { selectedProfile = profile },
+                                            endContent = {
+                                                CouiSwitch(
+                                                    checked = profile.enabled,
+                                                    isLoading = state.switchingProfileIccid == profile.iccid,
+                                                    enabled = state.busyTitle == null,
+                                                    onCheckedChange = { enable ->
+                                                        onSetProfileEnabled(profile, enable)
+                                                    },
+                                                )
+                                            },
+                                        ) {
+                                            Text(
+                                                text = title,
+                                                style = CouiTheme.typography.rowTitle,
+                                                color = colors.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            Text(
+                                                text = providerSubtitle,
+                                                style = CouiTheme.typography.summary,
+                                                color = colors.onSurfaceVariantSummary,
+                                                modifier = Modifier.padding(top = 2.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                        },
-                        onClick = {
-                            addSheetMode = AddSheetMode.CHOICE
-                            manualCode = ""
-                            confirmationCode = ""
-                            needConfirmationHint = false
-                            showAddSheet = true
-                        },
-                    )
-                }
-            }
+                        }
+                    }
 
-            // 4. Emergency Fallback Card
-            item(key = "fallback_card") {
-                Spacer(modifier = Modifier.height(16.dp))
-                CouiSmallTitle(text = "Advanced")
-                CouiCard {
-                    CouiArrowRow(
-                        title = "Open Advanced LPAC UI (OpenEUICC)",
-                        summary = "Direct fallback engine • Dial *#*#3418#*#* anytime",
-                        position = CouiRowPosition.Full,
-                        startContent = {
-                            Icon(
-                                imageVector = Icons.Rounded.Terminal,
-                                contentDescription = null,
-                                tint = colors.onSurfaceSecondary,
-                                modifier = Modifier.size(20.dp),
+                    // 3. Add eSIM Card Row (clean ColorOS 17 compact card without icon box)
+                    item(key = "add_esim_card") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        CouiCard {
+                            CouiArrowRow(
+                                title = "Add eSIM",
+                                summary = if (isEsim) {
+                                    "Scan a carrier QR code or enter activation code"
+                                } else {
+                                    "Switch SIM 2 to eSIM to download a new profile"
+                                },
+                                enabled = isEsim && state.busyTitle == null,
+                                position = CouiRowPosition.Full,
+                                onClick = {
+                                    addSheetMode = AddSheetMode.CHOICE
+                                    manualCode = ""
+                                    confirmationCode = ""
+                                    needConfirmationHint = false
+                                    showAddSheet = true
+                                },
                             )
-                        },
-                        onClick = onOpenFallbackOpenEuicc,
-                    )
+                        }
+                    }
+
+                    // 4. Advanced / Fallback Card
+                    item(key = "fallback_card") {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        CouiSmallTitle(text = "Advanced")
+                        CouiCard {
+                            CouiArrowRow(
+                                title = "Open Advanced LPAC UI (OpenEUICC)",
+                                summary = "Direct fallback engine • Dial *#*#3418#*#* anytime",
+                                position = CouiRowPosition.Full,
+                                onClick = onOpenFallbackOpenEuicc,
+                            )
+                        }
+                    }
                 }
-                Spacer(modifier = Modifier.height(24.dp))
             }
         }
+
+        // Sibling Floating ColorOS 17 Liquid Glass Top App Bar (matches Personal hotspot 1:1, no right clutter)
+        CouiTopAppBar(
+            title = "Manage eSIM",
+            onBack = onBack,
+            backdrop = backdrop,
+            modifier = Modifier.align(Alignment.TopCenter),
+            showBottomDivider = false,
+        )
     }
 
     // Profile Detail & Rename Bottom Sheet (Delete omitted per safety rules)
@@ -479,7 +375,7 @@ fun EsimManageScreen(
             sheetState = sheetState,
             containerColor = colors.surfaceContainer,
             scrimColor = colors.windowDimming,
-            shape = ContinuousRoundedRectangle(topStart = 26.dp, topEnd = 26.dp),
+            shape = ContinuousRoundedRectangle(topStart = 28.dp, topEnd = 28.dp),
         ) {
             Column(
                 modifier = Modifier
@@ -506,9 +402,12 @@ fun EsimManageScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(ContinuousRoundedRectangle(12.dp))
+                        .clip(ContinuousRoundedRectangle(14.dp))
                         .background(colors.surface)
-                        .clickable { copyToClipboard(context, "ICCID", profile.iccid) }
+                        .clickable {
+                            performCouiSwitchHaptic(view)
+                            copyToClipboard(context, "ICCID", profile.iccid)
+                        }
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -586,7 +485,7 @@ fun EsimManageScreen(
             sheetState = sheetState,
             containerColor = colors.surfaceContainer,
             scrimColor = colors.windowDimming,
-            shape = ContinuousRoundedRectangle(topStart = 26.dp, topEnd = 26.dp),
+            shape = ContinuousRoundedRectangle(topStart = 28.dp, topEnd = 28.dp),
         ) {
             when (addSheetMode) {
                 AddSheetMode.CHOICE -> {

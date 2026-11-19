@@ -1,5 +1,7 @@
 package com.dada.coloros.esim.ui.components
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
@@ -9,7 +11,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -38,7 +39,6 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -46,12 +46,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -60,41 +63,59 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import android.view.HapticFeedbackConstants
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.dada.coloros.esim.ui.theme.CouiTheme
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.highlight.HighlightStyle
+import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousCapsule
 import com.kyant.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.roundToInt
+import kotlin.math.sign
 
 enum class CouiRowPosition {
     None, Head, Middle, Tail, Full;
 
-    val extraTop: Dp get() = if (this == Head || this == Full) 2.dp else 0.dp
-    val extraBottom: Dp get() = if (this == Tail || this == Full) 2.dp else 0.dp
+    val extraTop: Dp get() = if (this == Head || this == Full) 1.dp else 0.dp
+    val extraBottom: Dp get() = if (this == Tail || this == Full) 1.dp else 0.dp
 }
 
 fun couiRowPositionOf(index: Int, count: Int): CouiRowPosition = when {
@@ -105,55 +126,264 @@ fun couiRowPositionOf(index: Int, count: Int): CouiRowPosition = when {
     else -> CouiRowPosition.Middle
 }
 
+/**
+ * ColorOS 17 rubber-band bouncy vertical overscroll.
+ * Works smoothly at both top and bottom boundaries even when list content fits on a single screen,
+ * displacing content via [graphicsLayer] translationY without AOSP vertical stretch distortion.
+ */
+fun Modifier.couiBouncyOverscroll(
+    maxOffset: Dp = 148.dp,
+    dampingFactor: Dp = 320.dp,
+): Modifier = composed {
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val maxOffsetPx = remember(density, maxOffset) { with(density) { maxOffset.toPx() } }
+    val kPx = remember(density, dampingFactor) { with(density) { dampingFactor.toPx() } }
+    val overscrollOffset = remember { Animatable(0f) }
+    var rawDrag by remember { mutableFloatStateOf(0f) }
+
+    fun rubberBand(raw: Float): Float {
+        if (raw == 0f) return 0f
+        return sign(raw) * maxOffsetPx * (1f - exp(-abs(raw) / kPx))
+    }
+
+    fun releaseSpring() {
+        rawDrag = 0f
+        if (abs(overscrollOffset.value) > 0.5f) {
+            scope.launch {
+                overscrollOffset.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
+                )
+            }
+        }
+    }
+
+    val nestedConnection = remember(maxOffsetPx, kPx) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
+                // If already pulled into overscroll and user drags back toward rest, unwind overscroll first.
+                if (rawDrag != 0f && sign(available.y) != sign(rawDrag)) {
+                    val prevRaw = rawDrag
+                    val nextRaw = prevRaw + available.y
+                    val consumedY = if (sign(nextRaw) != sign(prevRaw)) {
+                        rawDrag = 0f
+                        -prevRaw
+                    } else {
+                        rawDrag = nextRaw
+                        available.y
+                    }
+                    scope.launch { overscrollOffset.snapTo(rubberBand(rawDrag)) }
+                    return Offset(0f, consumedY)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
+                rawDrag += available.y
+                scope.launch { overscrollOffset.snapTo(rubberBand(rawDrag)) }
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (abs(overscrollOffset.value) > 0.5f || rawDrag != 0f) {
+                    rawDrag = 0f
+                    scope.launch {
+                        overscrollOffset.animateTo(
+                            targetValue = 0f,
+                            animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
+                        )
+                    }
+                    return Velocity(0f, available.y)
+                }
+                return Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (abs(overscrollOffset.value) > 0.5f || rawDrag != 0f) {
+                    releaseSpring()
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+
+    this
+        .nestedScroll(nestedConnection)
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Final)
+                    if (event.changes.none { it.pressed } && (abs(overscrollOffset.value) > 0.5f || rawDrag != 0f)) {
+                        releaseSpring()
+                    }
+                }
+            }
+        }
+        .graphicsLayer {
+            translationY = overscrollOffset.value
+        }
+}
+
+@Composable
+fun CouiBackButton(
+    onClick: () -> Unit,
+    backdrop: Backdrop? = null,
+    modifier: Modifier = Modifier,
+) {
+    val colors = CouiTheme.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val buttonScale = remember { Animatable(1f) }
+
+    LaunchedEffect(isPressed) {
+        buttonScale.animateTo(
+            targetValue = if (isPressed) 0.94f else 1f,
+            animationSpec = spring(dampingRatio = 0.70f, stiffness = 600f),
+        )
+    }
+
+    val isDark = colors.isDark
+    val surfaceColor = if (isDark) Color(0x28FFFFFF) else Color(0xB8F6F7F9)
+
+    val glassModifier = if (backdrop != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { CircleShape },
+            effects = {
+                vibrancy()
+                blur(4f.dp.toPx())
+                lens(
+                    refractionHeight = 10f.dp.toPx(),
+                    refractionAmount = 20f.dp.toPx(),
+                    depthEffect = true,
+                )
+            },
+            highlight = {
+                Highlight(
+                    width = 0.75.dp,
+                    alpha = if (isDark) 0.45f else 0.90f,
+                    style = HighlightStyle.Default,
+                )
+            },
+            shadow = {
+                Shadow(
+                    radius = 18.dp,
+                    offset = DpOffset(0.dp, 5.dp),
+                    color = Color.Black.copy(alpha = if (isDark) 0.32f else 0.09f),
+                )
+            },
+            layerBlock = {
+                scaleX = buttonScale.value
+                scaleY = buttonScale.value
+            },
+            onDrawSurface = {
+                drawRect(surfaceColor)
+            },
+        )
+    } else {
+        Modifier
+            .graphicsLayer {
+                scaleX = buttonScale.value
+                scaleY = buttonScale.value
+            }
+            .shadow(
+                elevation = if (isDark) 0.dp else 10.dp,
+                shape = CircleShape,
+                ambientColor = Color(0x24000000),
+                spotColor = Color(0x1E000000),
+            )
+            .clip(CircleShape)
+            .background(if (isDark) Color(0x28FFFFFF) else Color(0xCCF6F7F9))
+    }
+
+    Box(
+        modifier = modifier
+            .size(46.dp)
+            .then(glassModifier)
+            .semantics {
+                contentDescription = "Back"
+                role = Role.Button
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        // ColorOS 17 sleek wide-winged back arrow (24dp canvas -> ~20.3dp x 16.6dp glyph, 1.65dp stroke)
+        val arrowColor = colors.onSurface
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val stroke = 1.65.dp.toPx()
+            val cy = size.height * 0.50f
+            val startX = size.width * 0.14f
+            val endX = size.width * 0.86f
+            val headLen = size.width * 0.30f
+            val headHalfH = headLen * 0.92f
+
+            drawLine(
+                color = arrowColor,
+                start = Offset(startX + stroke * 0.35f, cy),
+                end = Offset(endX, cy),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+            val chevron = Path().apply {
+                moveTo(startX + headLen, cy - headHalfH)
+                lineTo(startX, cy)
+                lineTo(startX + headLen, cy + headHalfH)
+            }
+            drawPath(
+                path = chevron,
+                color = arrowColor,
+                style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
+        }
+    }
+}
+
 @Composable
 fun CouiTopAppBar(
     title: String,
     onBack: () -> Unit,
+    backdrop: Backdrop? = null,
+    modifier: Modifier = Modifier,
     showBottomDivider: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = CouiTheme.colors
+    // Translucent top scrim so scrolling cards glide behind the header and visibly refract inside the 46dp Liquid Glass button
+    val topScrim = Brush.verticalGradient(
+        0.0f to colors.surface.copy(alpha = 0.88f),
+        0.65f to colors.surface.copy(alpha = 0.58f),
+        1.0f to Color.Transparent,
+    )
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .background(colors.surface)
+            .background(topScrim)
             .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp)
+                .height(64.dp)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Circular white elevated back button matching mobile-network-settings.jpg
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .shadow(
-                        elevation = if (colors.isDark) 0.dp else 3.dp,
-                        shape = CircleShape,
-                        ambientColor = Color(0x18000000),
-                        spotColor = Color(0x18000000),
-                    )
-                    .clip(CircleShape)
-                    .background(colors.surfaceContainer)
-                    .border(
-                        width = 0.5.dp,
-                        color = if (colors.isDark) Color(0x26FFFFFF) else Color(0x10000000),
-                        shape = CircleShape,
-                    )
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Back",
-                    tint = colors.onSurface,
-                    modifier = Modifier.size(21.dp),
-                )
-            }
-            Spacer(modifier = Modifier.width(14.dp))
+            CouiBackButton(
+                onClick = onBack,
+                backdrop = backdrop,
+            )
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = title,
                 style = CouiTheme.typography.topBarTitle,
@@ -165,7 +395,7 @@ fun CouiTopAppBar(
             actions()
         }
         if (showBottomDivider) {
-            CouiDivider(horizontalInset = 0.dp)
+            CouiDivider(horizontalInset = 0.dp, thickness = 0.5.dp)
         }
     }
 }
@@ -180,7 +410,7 @@ fun CouiSmallTitle(
         style = CouiTheme.typography.sectionTitle,
         color = CouiTheme.colors.onSurfaceSecondary,
         modifier = modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)
             .heightIn(min = 16.dp)
             .wrapContentHeight(),
     )
@@ -207,7 +437,7 @@ fun CouiCard(
 fun CouiDivider(
     modifier: Modifier = Modifier,
     horizontalInset: Dp = 16.dp,
-    thickness: Dp = 0.33.dp,
+    thickness: Dp = 1.dp,
     color: Color = CouiTheme.colors.dividerLine,
 ) {
     Canvas(
@@ -228,13 +458,19 @@ fun CouiDivider(
 
 private val RowPressSpring = spring<Float>(dampingRatio = 1f, stiffness = 438.65f)
 
+fun performCouiSwitchHaptic(view: android.view.View) {
+    if (view.isAttachedToWindow && !view.performHapticFeedback(302)) {
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+}
+
 @Composable
 fun CouiRow(
     modifier: Modifier = Modifier,
     position: CouiRowPosition = CouiRowPosition.None,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
-    insidePadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+    insidePadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
     startContent: (@Composable () -> Unit)? = null,
     endContent: (@Composable RowScope.() -> Unit)? = null,
     centerContent: @Composable ColumnScope.() -> Unit,
@@ -288,12 +524,79 @@ fun CouiRow(
             content = centerContent,
         )
         if (endContent != null) {
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 content = endContent,
             )
         }
+    }
+}
+
+@Composable
+fun CouiSwitchRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    position: CouiRowPosition = CouiRowPosition.None,
+    enabled: Boolean = true,
+    isLoading: Boolean = false,
+    insidePadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+    centerContent: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = CouiTheme.colors
+    val view = LocalView.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val tintProgress = remember { Animatable(0f) }
+    val interactive = enabled && !isLoading
+
+    LaunchedEffect(isPressed, interactive) {
+        if (interactive && isPressed) {
+            tintProgress.animateTo(1f, RowPressSpring)
+        } else if (tintProgress.value > 0f) {
+            tintProgress.animateTo(0f, RowPressSpring)
+        }
+    }
+
+    val fillOverlay = if (tintProgress.value > 0f) {
+        lerp(Color.Transparent, colors.surfaceContainerHigh, tintProgress.value * 0.85f)
+    } else {
+        Color.Transparent
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp + position.extraTop + position.extraBottom)
+            .background(fillOverlay)
+            .toggleable(
+                value = checked,
+                enabled = interactive,
+                role = Role.Switch,
+                interactionSource = interactionSource,
+                indication = null,
+                onValueChange = { v ->
+                    performCouiSwitchHaptic(view)
+                    onCheckedChange(v)
+                },
+            )
+            .padding(insidePadding)
+            .padding(top = position.extraTop, bottom = position.extraBottom),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
+            content = centerContent,
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        CouiSwitch(
+            checked = checked,
+            onCheckedChange = null,
+            enabled = enabled,
+            isLoading = isLoading,
+        )
     }
 }
 
@@ -320,7 +623,7 @@ fun CouiArrowRow(
                 Text(
                     text = statusText,
                     style = CouiTheme.typography.body,
-                    color = colors.onSurfaceSecondary,
+                    color = colors.onSurfaceVariantSummary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -442,9 +745,7 @@ fun CouiSwitch(
             interactionSource = interactionSource,
             indication = null,
             onValueChange = { v ->
-                if (view.isAttachedToWindow && !view.performHapticFeedback(302)) {
-                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                }
+                performCouiSwitchHaptic(view)
                 currentOnCheckedChange?.invoke(v)
             },
         )
@@ -586,7 +887,7 @@ fun CouiLoadingDialog(
     subtitle: String? = null,
 ) {
     val colors = CouiTheme.colors
-    val shape = ContinuousRoundedRectangle(22.dp)
+    val shape = ContinuousRoundedRectangle(24.dp)
     Dialog(
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
