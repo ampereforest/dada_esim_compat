@@ -29,7 +29,14 @@ public final class N3SystemService extends SystemService {
                     String context = (String) Class.forName("android.os.SELinux")
                             .getMethod("getContext").invoke(null);
                     if (!"u:r:system_server:s0".equals(context)) throw new SecurityException("system_server required");
-                    if (owner == null) owner = RomOwnerFactory.create(getContext());
+                    if (owner == null) {
+                        owner = RomOwnerFactory.create(getContext());
+                        final Runnable poll = this;
+                        owner.setOnProviderDied(() -> {
+                            worker.removeCallbacks(poll);
+                            worker.postDelayed(poll, 500);
+                        });
+                    }
                     if (!owner.providerConnected()) {
                         Intent offer = new Intent().setComponent(new ComponentName(CallerPolicy.PACKAGE,
                                 CallerPolicy.PACKAGE + ".service.N3EndpointReceiver"));
@@ -41,7 +48,9 @@ public final class N3SystemService extends SystemService {
                 } catch (Exception unavailable) {
                     android.util.Log.e("N3OwnerLifecycle", "Owner unavailable; no route replay", unavailable);
                 }
-                worker.postDelayed(this, 15000);
+                long delayMs = (owner != null && owner.providerConnected()) ? 15000L : 2000L;
+                worker.removeCallbacks(this);
+                worker.postDelayed(this, delayMs);
             }
         });
     }

@@ -114,7 +114,7 @@ if [[ -n ${KEYSTORE_PATH:-} ]]; then
     [[ -n ${KEYSTORE_PASSWORD:-} ]] || fail 'Provide password via private file or environment.'
 else
     mkdir -- "$BUILD_DIR/signing"
-    KEYSTORE_PATH=$BUILD_DIR/signing/openeuicc-release.p12
+    KEYSTORE_PATH=$BUILD_DIR/signing/esim-release.p12
     KEYSTORE_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
     KEY_PASSWORD=$KEYSTORE_PASSWORD
     printf '%s\n' "$KEYSTORE_PASSWORD" > "$BUILD_DIR/signing/keystore-password.private"

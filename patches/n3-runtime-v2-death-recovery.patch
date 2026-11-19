@@ -1,0 +1,78 @@
+--- a/org/sourceowned/n3/runtime/v2/RoutingOwnerBinder.java
++++ b/org/sourceowned/n3/runtime/v2/RoutingOwnerBinder.java
+@@ -22,7 +22,13 @@
+     private int lpaUid;
+     private IBinder.DeathRecipient lpaDeath;
+     private volatile IBinder providerEndpoint;
+-    public boolean providerConnected() { return providerEndpoint != null && providerEndpoint.isBinderAlive(); }
++    private IBinder.DeathRecipient providerDeath;
++    private volatile Runnable onProviderDied;
++    public void setOnProviderDied(Runnable callback) { this.onProviderDied = callback; }
++    public boolean providerConnected() {
++        IBinder ep = providerEndpoint;
++        return ep != null && ep.isBinderAlive();
++    }
+     public RoutingOwnerBinder(CallerPolicy auth, ForegroundPolicy foreground, RealReadback readback,
+                               ExperimentalIntent intent, boolean test) {
+         this.auth = auth; this.foreground = foreground; this.readback = readback; this.intent = intent; this.test = test;
+@@ -54,7 +60,29 @@
+                         send.writeInterfaceToken("im.angry.openeuicc.IN3Endpoint"); send.writeStrongBinder(this);
+                         if (!endpoint.transact(1, send, response, 0)) throw new RemoteException("handoff failed");
+                         response.readException();
+-                        providerEndpoint = endpoint;
++                        synchronized (gate) {
++                            if (providerEndpoint != null && providerDeath != null) {
++                                try { providerEndpoint.unlinkToDeath(providerDeath, 0); } catch (Exception ignored) { }
++                            }
++                            IBinder.DeathRecipient death = () -> {
++                                boolean cleared = false;
++                                synchronized (gate) {
++                                    if (providerEndpoint == endpoint) {
++                                        providerEndpoint = null;
++                                        providerDeath = null;
++                                        cleared = true;
++                                    }
++                                }
++                                if (cleared) {
++                                    android.util.Log.i("N3OwnerLifecycle", "Provider endpoint died; scheduling re-offer");
++                                    Runnable cb = onProviderDied;
++                                    if (cb != null) cb.run();
++                                }
++                            };
++                            endpoint.linkToDeath(death, 0);
++                            providerEndpoint = endpoint;
++                            providerDeath = death;
++                        }
+                     } finally { send.recycle(); response.recycle(); Binder.restoreCallingIdentity(identity); }
+                     result = new Bundle(); result.putString("status", "CONNECTED");
+                 } else if (code == Protocol.GET_STATUS) { end(data); result = read(); }
+
+--- a/org/sourceowned/n3/runtime/v2/N3SystemService.java
++++ b/org/sourceowned/n3/runtime/v2/N3SystemService.java
+@@ -29,7 +29,14 @@
+                     String context = (String) Class.forName("android.os.SELinux")
+                             .getMethod("getContext").invoke(null);
+                     if (!"u:r:system_server:s0".equals(context)) throw new SecurityException("system_server required");
+-                    if (owner == null) owner = RomOwnerFactory.create(getContext());
++                    if (owner == null) {
++                        owner = RomOwnerFactory.create(getContext());
++                        final Runnable poll = this;
++                        owner.setOnProviderDied(() -> {
++                            worker.removeCallbacks(poll);
++                            worker.postDelayed(poll, 500);
++                        });
++                    }
+                     if (!owner.providerConnected()) {
+                         Intent offer = new Intent().setComponent(new ComponentName(CallerPolicy.PACKAGE,
+                                 CallerPolicy.PACKAGE + ".service.N3EndpointReceiver"));
+@@ -41,7 +48,9 @@
+                 } catch (Exception unavailable) {
+                     android.util.Log.e("N3OwnerLifecycle", "Owner unavailable; no route replay", unavailable);
+                 }
+-                worker.postDelayed(this, 15000);
++                long delayMs = (owner != null && owner.providerConnected()) ? 15000L : 2000L;
++                worker.removeCallbacks(this);
++                worker.postDelayed(this, delayMs);
+             }
+         });
+     }

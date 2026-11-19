@@ -1,0 +1,1 @@
+-keep class im.angry.openeuicc.bridge.** { *; }

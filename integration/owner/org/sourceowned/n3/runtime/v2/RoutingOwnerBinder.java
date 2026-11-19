@@ -22,7 +22,13 @@ public final class RoutingOwnerBinder extends Binder {
     private int lpaUid;
     private IBinder.DeathRecipient lpaDeath;
     private volatile IBinder providerEndpoint;
-    public boolean providerConnected() { return providerEndpoint != null && providerEndpoint.isBinderAlive(); }
+    private IBinder.DeathRecipient providerDeath;
+    private volatile Runnable onProviderDied;
+    public void setOnProviderDied(Runnable callback) { this.onProviderDied = callback; }
+    public boolean providerConnected() {
+        IBinder ep = providerEndpoint;
+        return ep != null && ep.isBinderAlive();
+    }
     public RoutingOwnerBinder(CallerPolicy auth, ForegroundPolicy foreground, RealReadback readback,
                               ExperimentalIntent intent, boolean test) {
         this.auth = auth; this.foreground = foreground; this.readback = readback; this.intent = intent; this.test = test;
@@ -54,7 +60,29 @@ public final class RoutingOwnerBinder extends Binder {
                         send.writeInterfaceToken("im.angry.openeuicc.IN3Endpoint"); send.writeStrongBinder(this);
                         if (!endpoint.transact(1, send, response, 0)) throw new RemoteException("handoff failed");
                         response.readException();
-                        providerEndpoint = endpoint;
+                        synchronized (gate) {
+                            if (providerEndpoint != null && providerDeath != null) {
+                                try { providerEndpoint.unlinkToDeath(providerDeath, 0); } catch (Exception ignored) { }
+                            }
+                            IBinder.DeathRecipient death = () -> {
+                                boolean cleared = false;
+                                synchronized (gate) {
+                                    if (providerEndpoint == endpoint) {
+                                        providerEndpoint = null;
+                                        providerDeath = null;
+                                        cleared = true;
+                                    }
+                                }
+                                if (cleared) {
+                                    android.util.Log.i("N3OwnerLifecycle", "Provider endpoint died; scheduling re-offer");
+                                    Runnable cb = onProviderDied;
+                                    if (cb != null) cb.run();
+                                }
+                            };
+                            endpoint.linkToDeath(death, 0);
+                            providerEndpoint = endpoint;
+                            providerDeath = death;
+                        }
                     } finally { send.recycle(); response.recycle(); Binder.restoreCallingIdentity(identity); }
                     result = new Bundle(); result.putString("status", "CONNECTED");
                 } else if (code == Protocol.GET_STATUS) { end(data); result = read(); }
