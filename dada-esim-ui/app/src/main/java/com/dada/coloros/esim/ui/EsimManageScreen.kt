@@ -65,7 +65,7 @@ import com.dada.coloros.esim.ui.components.CouiSmallTitle
 import com.dada.coloros.esim.ui.components.CouiSwitch
 import com.dada.coloros.esim.ui.components.CouiSwitchRow
 import com.dada.coloros.esim.ui.components.CouiTopAppBar
-import com.dada.coloros.esim.ui.components.couiBouncyOverscroll
+import com.dada.coloros.esim.ui.components.couiOverScrollVertical
 import com.dada.coloros.esim.ui.components.couiRowPositionOf
 import com.dada.coloros.esim.ui.components.performCouiSwitchHaptic
 import com.dada.coloros.esim.ui.theme.CouiTheme
@@ -122,7 +122,7 @@ fun EsimManageScreen(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .couiBouncyOverscroll()
+                        .couiOverScrollVertical()
                         .navigationBarsPadding(),
                     contentPadding = PaddingValues(
                         start = 16.dp,

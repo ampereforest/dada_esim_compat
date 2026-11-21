@@ -7,6 +7,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -57,15 +58,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
@@ -99,6 +105,7 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.runtimeShaderEffect
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
@@ -124,111 +131,6 @@ fun couiRowPositionOf(index: Int, count: Int): CouiRowPosition = when {
     index == 0 -> CouiRowPosition.Head
     index == count - 1 -> CouiRowPosition.Tail
     else -> CouiRowPosition.Middle
-}
-
-/**
- * ColorOS 17 rubber-band bouncy vertical overscroll.
- * Works smoothly at both top and bottom boundaries even when list content fits on a single screen,
- * displacing content via [graphicsLayer] translationY without AOSP vertical stretch distortion.
- */
-fun Modifier.couiBouncyOverscroll(
-    maxOffset: Dp = 148.dp,
-    dampingFactor: Dp = 320.dp,
-): Modifier = composed {
-    val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
-    val maxOffsetPx = remember(density, maxOffset) { with(density) { maxOffset.toPx() } }
-    val kPx = remember(density, dampingFactor) { with(density) { dampingFactor.toPx() } }
-    val overscrollOffset = remember { Animatable(0f) }
-    var rawDrag by remember { mutableFloatStateOf(0f) }
-
-    fun rubberBand(raw: Float): Float {
-        if (raw == 0f) return 0f
-        return sign(raw) * maxOffsetPx * (1f - exp(-abs(raw) / kPx))
-    }
-
-    fun releaseSpring() {
-        rawDrag = 0f
-        if (abs(overscrollOffset.value) > 0.5f) {
-            scope.launch {
-                overscrollOffset.animateTo(
-                    targetValue = 0f,
-                    animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
-                )
-            }
-        }
-    }
-
-    val nestedConnection = remember(maxOffsetPx, kPx) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
-                // If already pulled into overscroll and user drags back toward rest, unwind overscroll first.
-                if (rawDrag != 0f && sign(available.y) != sign(rawDrag)) {
-                    val prevRaw = rawDrag
-                    val nextRaw = prevRaw + available.y
-                    val consumedY = if (sign(nextRaw) != sign(prevRaw)) {
-                        rawDrag = 0f
-                        -prevRaw
-                    } else {
-                        rawDrag = nextRaw
-                        available.y
-                    }
-                    scope.launch { overscrollOffset.snapTo(rubberBand(rawDrag)) }
-                    return Offset(0f, consumedY)
-                }
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
-                rawDrag += available.y
-                scope.launch { overscrollOffset.snapTo(rubberBand(rawDrag)) }
-                return Offset(0f, available.y)
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                if (abs(overscrollOffset.value) > 0.5f || rawDrag != 0f) {
-                    rawDrag = 0f
-                    scope.launch {
-                        overscrollOffset.animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
-                        )
-                    }
-                    return Velocity(0f, available.y)
-                }
-                return Velocity.Zero
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (abs(overscrollOffset.value) > 0.5f || rawDrag != 0f) {
-                    releaseSpring()
-                }
-                return Velocity.Zero
-            }
-        }
-    }
-
-    this
-        .nestedScroll(nestedConnection)
-        .pointerInput(Unit) {
-            awaitPointerEventScope {
-                while (true) {
-                    val event = awaitPointerEvent(PointerEventPass.Final)
-                    if (event.changes.none { it.pressed } && (abs(overscrollOffset.value) > 0.5f || rawDrag != 0f)) {
-                        releaseSpring()
-                    }
-                }
-            }
-        }
-        .graphicsLayer {
-            translationY = overscrollOffset.value
-        }
 }
 
 @Composable
@@ -260,8 +162,8 @@ fun CouiBackButton(
                 vibrancy()
                 blur(4f.dp.toPx())
                 lens(
-                    refractionHeight = 10f.dp.toPx(),
-                    refractionAmount = 20f.dp.toPx(),
+                    refractionHeight = 8f.dp.toPx(),
+                    refractionAmount = 18f.dp.toPx(),
                     depthEffect = true,
                 )
             },
@@ -274,8 +176,8 @@ fun CouiBackButton(
             },
             shadow = {
                 Shadow(
-                    radius = 18.dp,
-                    offset = DpOffset(0.dp, 5.dp),
+                    radius = 16.dp,
+                    offset = DpOffset(0.dp, 4.dp),
                     color = Color.Black.copy(alpha = if (isDark) 0.32f else 0.09f),
                 )
             },
@@ -305,7 +207,7 @@ fun CouiBackButton(
 
     Box(
         modifier = modifier
-            .size(46.dp)
+            .size(40.dp)
             .then(glassModifier)
             .semantics {
                 contentDescription = "Back"
@@ -318,27 +220,25 @@ fun CouiBackButton(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        // ColorOS 17 sleek wide-winged back arrow (24dp canvas -> ~20.3dp x 16.6dp glyph, 1.65dp stroke)
+        // Exact stock ColorOS 17 COUI back arrow (Settings.apk res/drawable/coui_back_arrow_normal.xml):
+        // viewport 24x24: M10.1,4.4 L2.5,12 M2.5,12 L10.1,19.6 M2.5,12 L21.5,12.001, strokeWidth=1.4dp
         val arrowColor = colors.onSurface
-        Canvas(modifier = Modifier.size(24.dp)) {
-            val stroke = 1.65.dp.toPx()
-            val cy = size.height * 0.50f
-            val startX = size.width * 0.14f
-            val endX = size.width * 0.86f
-            val headLen = size.width * 0.30f
-            val headHalfH = headLen * 0.92f
+        Canvas(modifier = Modifier.size(22.dp)) {
+            val sx = size.width / 24f
+            val sy = size.height / 24f
+            val stroke = 1.4.dp.toPx()
 
             drawLine(
                 color = arrowColor,
-                start = Offset(startX + stroke * 0.35f, cy),
-                end = Offset(endX, cy),
+                start = Offset(2.5f * sx, 12.0f * sy),
+                end = Offset(21.5f * sx, 12.001f * sy),
                 strokeWidth = stroke,
                 cap = StrokeCap.Round,
             )
             val chevron = Path().apply {
-                moveTo(startX + headLen, cy - headHalfH)
-                lineTo(startX, cy)
-                lineTo(startX + headLen, cy + headHalfH)
+                moveTo(10.1f * sx, 4.4f * sy)
+                lineTo(2.5f * sx, 12.0f * sy)
+                lineTo(10.1f * sx, 19.6f * sy)
             }
             drawPath(
                 path = chevron,
@@ -348,6 +248,37 @@ fun CouiBackButton(
         }
     }
 }
+
+// 1D separable progressive Gaussian blur AGSL shader (100% opaque replacement — zero bloom/sharp ghost).
+// Blur radius itself ramps smoothly from 0px at the bottom apron edge (t=0.95) up to maxRadius at top (t=0.35).
+private const val PROGRESSIVE_TOP_BLUR_AGSL = """
+uniform shader content;
+uniform float2 size;
+uniform float pad;
+uniform float maxRadius;
+uniform float2 dir;
+
+half4 main(float2 coord) {
+    float t = clamp((coord.y - pad) / max(size.y, 1.0), 0.0, 1.0);
+    float u = smoothstep(0.95, 0.35, t);
+    float r = maxRadius * u;
+    if (r < 0.35) {
+        return content.eval(coord);
+    }
+    float2 maxC = size + float2(pad * 2.0);
+    float stepPx = r / 6.0;
+    half4 acc = half4(0.0);
+    float wsum = 0.0;
+    for (int i = -6; i <= 6; i++) {
+        float fi = float(i);
+        float w = exp(-0.5 * (fi * fi) / 7.5);
+        float2 p = clamp(coord + dir * (fi * stepPx), float2(0.0), maxC);
+        acc += content.eval(p) * half(w);
+        wsum += w;
+    }
+    return acc / half(wsum);
+}
+"""
 
 @Composable
 fun CouiTopAppBar(
@@ -359,43 +290,90 @@ fun CouiTopAppBar(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = CouiTheme.colors
-    // Translucent top scrim so scrolling cards glide behind the header and visibly refract inside the 46dp Liquid Glass button
+    // Calibrated 1:1 against stock ColorOS 17 Personal hotspot (correct-blur.jpg, 1200x2670):
+    // True 2-pass separable AGSL variable-radius Gaussian blur (0.dp at bottom -> 6.5.dp at top)
+    // with 100% opaque replacement (zero DstIn alpha bloom, zero sharp ghost, zero bottom seam),
+    // paired with the smooth bottom-to-top canvas fade overlay (#F0F1F3 light / #000000 dark).
     val topScrim = Brush.verticalGradient(
-        0.0f to colors.surface.copy(alpha = 0.88f),
-        0.65f to colors.surface.copy(alpha = 0.58f),
-        1.0f to Color.Transparent,
+        0.00f to colors.surface.copy(alpha = 0.98f),
+        0.28f to colors.surface.copy(alpha = 0.94f),
+        0.52f to colors.surface.copy(alpha = 0.72f),
+        0.74f to colors.surface.copy(alpha = 0.36f),
+        0.88f to colors.surface.copy(alpha = 0.12f),
+        1.00f to Color.Transparent,
     )
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(topScrim)
-            .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
-    ) {
-        Row(
+    Box(modifier = modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .then(
+                    if (backdrop != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        Modifier.drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { RectangleShape },
+                            effects = {
+                                val maxR = 6.5f.dp.toPx()
+                                if (maxR > padding) padding = maxR
+                                val p = padding
+                                val w = size.width
+                                val h = size.height
+                                runtimeShaderEffect("CouiProgBlurH", PROGRESSIVE_TOP_BLUR_AGSL, "content") {
+                                    setFloatUniform("size", w, h)
+                                    setFloatUniform("pad", p)
+                                    setFloatUniform("maxRadius", maxR)
+                                    setFloatUniform("dir", 1f, 0f)
+                                }
+                                runtimeShaderEffect("CouiProgBlurV", PROGRESSIVE_TOP_BLUR_AGSL, "content") {
+                                    setFloatUniform("size", w, h)
+                                    setFloatUniform("pad", p)
+                                    setFloatUniform("maxRadius", maxR)
+                                    setFloatUniform("dir", 0f, 1f)
+                                }
+                            },
+                            highlight = { null },
+                            shadow = { null },
+                            onDrawSurface = {
+                                drawRect(topScrim)
+                            },
+                        )
+                    } else {
+                        Modifier.background(topScrim)
+                    }
+                ),
+        )
+
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
         ) {
-            CouiBackButton(
-                onClick = onBack,
-                backdrop = backdrop,
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = title,
-                style = CouiTheme.typography.topBarTitle,
-                color = colors.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            actions()
-        }
-        if (showBottomDivider) {
-            CouiDivider(horizontalInset = 0.dp, thickness = 0.5.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CouiBackButton(
+                    onClick = onBack,
+                    backdrop = backdrop,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = title,
+                    style = CouiTheme.typography.topBarTitle,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                actions()
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            if (showBottomDivider) {
+                CouiDivider(horizontalInset = 0.dp, thickness = 0.5.dp)
+            }
         }
     }
 }
