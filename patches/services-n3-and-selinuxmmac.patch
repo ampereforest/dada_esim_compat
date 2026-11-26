@@ -1,52 +1,90 @@
---- a/com/android/server/SystemServer.smali
-+++ b/com/android/server/SystemServer.smali
-@@ -12665,8 +12665,10 @@
+# Patch: Boot N3SystemService from SystemServer (classes.dex) & allow custom-signed system APKs platform SELinux domain in SELinuxMMAC (classes3.dex)
+# Apply classes.dex hunk to baksmali output of services.jar/classes.dex and classes3.dex hunk to services.jar/classes3.dex.
+# Requires patches/services-platform-signer-compat.patch (PackageManagerServiceUtils.isDadaSigner & isDadaPlatformCompat).
+--- a/com/android/server/SystemServer.smali	2026-11-26 10:17:24.084935694 +0700
++++ b/com/android/server/SystemServer.smali	2026-11-26 10:17:26.760745907 +0700
+@@ -5229,6 +5229,34 @@
+ .method private static native startMemtrackProxyService()V
+ .end method
+ 
++.method private startN3OwnerLifecycle()V
++    .registers 4
++
++    :try_start_0
++    iget-object v0, p0, Lcom/android/server/SystemServer;->mSystemServiceManager:Lcom/android/server/SystemServiceManager;
++
++    const-string/jumbo v1, "org.sourceowned.n3.runtime.v2.N3SystemService"
++
++    const-string v2, "/system/framework/n3-runtime-v2.jar"
++
++    invoke-virtual {v0, v1, v2}, Lcom/android/server/SystemServiceManager;->startServiceFromJar(Ljava/lang/String;Ljava/lang/String;)Lcom/android/server/SystemService;
++    :try_end_a
++    .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_a} :catch_b
++
++    return-void
++
++    :catch_b
++    move-exception v0
++
++    const-string v1, "N3OwnerLifecycle"
++
++    const-string v2, "Lifecycle loader unavailable; no routing operation"
++
++    invoke-static {v1, v2, v0}, Landroid/util/Slog;->e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
++
++    return-void
++.end method
++
+ .method private startOnDeviceIntelligenceService(Lcom/android/server/utils/TimingsTraceAndSlog;)V
+     .registers 4
+     .param p1, "t"    # Lcom/android/server/utils/TimingsTraceAndSlog;
+@@ -12631,11 +12661,13 @@
+     invoke-interface {v0, v10, v11, v2}, Lcom/android/server/ISystemServerExt;->addCrossDeviceService(Landroid/content/Context;Lcom/android/server/am/ActivityManagerService;Lcom/android/server/utils/TimingsTraceAndSlog;)V
+ 
+     .line 3695
+-    :cond_1760
++    :cond_1761
      iget-object v0, v1, Lcom/android/server/SystemServer;->mSystemServiceManager:Lcom/android/server/SystemServiceManager;
  
      invoke-virtual {v0, v7}, Lcom/android/server/SystemServiceManager;->setSafeMode(Z)V
  
 +    invoke-direct {v1}, Lcom/android/server/SystemServer;->startN3OwnerLifecycle()V
 +
- 
      .line 3698
      const-string v0, "StartDeviceSpecificServices"
  
-@@ -5230,0 +5232,20 @@
-+# Custom method fragment for target SystemServer, not a complete stock class.
-+# Call once in startOtherServices after setSafeMode, before device-specific services.
-+# Parent hash/method register/scope checks and affected ART/CLC refresh are mandatory.
-+.method private startN3OwnerLifecycle()V
-+    .registers 4
-+    :n3_try_start
-+    iget-object v0, p0, Lcom/android/server/SystemServer;->mSystemServiceManager:Lcom/android/server/SystemServiceManager;
-+    const-string v1, "org.sourceowned.n3.runtime.v2.N3SystemService"
-+    const-string v2, "/system/framework/n3-runtime-v2.jar"
-+    invoke-virtual {v0, v1, v2}, Lcom/android/server/SystemServiceManager;->startServiceFromJar(Ljava/lang/String;Ljava/lang/String;)Lcom/android/server/SystemService;
-+    :n3_try_end
-+    .catch Ljava/lang/Exception; {:n3_try_start .. :n3_try_end} :n3_failed
-+    return-void
-+    :n3_failed
-+    move-exception v0
-+    const-string v1, "N3OwnerLifecycle"
-+    const-string v2, "Lifecycle loader unavailable; no routing operation"
-+    invoke-static {v1, v2, v0}, Landroid/util/Slog;->e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
-+    return-void
-+.end method
-
---- a/com/android/server/pm/SELinuxMMAC.smali
-+++ b/com/android/server/pm/SELinuxMMAC.smali
-@@ -422,4 +422,34 @@
-     invoke-interface {p1}, Lcom/android/server/pm/pkg/AndroidPackage;->getPackageName()Ljava/lang/String;
+--- a/com/android/server/pm/SELinuxMMAC.smali	2026-11-26 10:17:29.068342482 +0700
++++ b/com/android/server/pm/SELinuxMMAC.smali	2026-11-26 10:17:31.539531110 +0700
+@@ -406,17 +406,70 @@
+     :goto_24
+     monitor-exit v1
+     :try_end_25
+-    .catchall {:try_start_4 .. :try_end_25} :catchall_77
++    .catchall {:try_start_4 .. :try_end_25} :catchall_a9
  
-     move-result-object v1
- 
+     .line 460
+-    if-nez v0, :cond_29
++    if-nez v0, :cond_5b
++
++    if-eqz p0, :cond_59
++
++    invoke-interface {p0}, Lcom/android/server/pm/pkg/PackageState;->isSystem()Z
++
++    move-result v1
++
++    if-eqz v1, :cond_59
++
++    invoke-interface {p1}, Lcom/android/server/pm/pkg/AndroidPackage;->getPackageName()Ljava/lang/String;
++
++    move-result-object v1
++
 +    const-string v2, "com.android.phone"
 +
 +    invoke-virtual {v2, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
 +
 +    move-result v3
 +
-+    if-nez v3, :cond_43
++    if-nez v3, :cond_4b
 +
 +    const-string v2, "com.android.settings"
 +
@@ -54,7 +92,7 @@
 +
 +    move-result v3
 +
-+    if-nez v3, :cond_43
++    if-nez v3, :cond_4b
 +
 +    const-string v2, "com.android.systemui"
 +
@@ -62,11 +100,75 @@
 +
 +    move-result v3
 +
-+    if-eqz v3, :cond_51
++    if-eqz v3, :cond_59
 +
-+    :cond_43
++    :cond_4b
 +    invoke-interface {p1}, Lcom/android/server/pm/pkg/AndroidPackage;->getSigningDetails()Landroid/content/pm/SigningDetails;
 +
 +    move-result-object v1
 +
 +    invoke-static {v1}, Lcom/android/server/pm/PackageManagerServiceUtils;->isDadaSigner(Landroid/content/pm/SigningDetails;)Z
++
++    move-result v1
++
++    if-eqz v1, :cond_59
++
++    const-string/jumbo v0, "platform"
++
++    goto :goto_5b
+ 
+     .line 461
++    :cond_59
+     const-string v0, "default"
+ 
+     .line 464
+-    :cond_29
+-    if-eqz p2, :cond_3e
++    :cond_5b
++    :goto_5b
++    if-eqz p2, :cond_70
+ 
+     .line 465
+     new-instance v1, Ljava/lang/StringBuilder;
+@@ -438,7 +491,7 @@
+     move-result-object v0
+ 
+     .line 468
+-    :cond_3e
++    :cond_70
+     new-instance v1, Ljava/lang/StringBuilder;
+ 
+     invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V
+@@ -472,7 +525,7 @@
+ 
+     move-result v2
+ 
+-    if-nez v2, :cond_76
++    if-nez v2, :cond_a8
+ 
+     .line 472
+     new-instance v2, Ljava/lang/StringBuilder;
+@@ -498,18 +551,18 @@
+     move-result-object v0
+ 
+     .line 479
+-    :cond_76
++    :cond_a8
+     return-object v0
+ 
+     .line 458
+     .end local v1    # "partition":Ljava/lang/String;
+-    :catchall_77
++    :catchall_a9
+     move-exception v2
+ 
+-    :try_start_78
++    :try_start_aa
+     monitor-exit v1
+-    :try_end_79
+-    .catchall {:try_start_78 .. :try_end_79} :catchall_77
++    :try_end_ab
++    .catchall {:try_start_aa .. :try_end_ab} :catchall_a9
+ 
+     throw v2
+ .end method

@@ -1,0 +1,697 @@
+# Patch: PackageManagerServiceUtils.isDadaPlatformCompat() & isDadaSigner() (services.jar/classes3.dex)
+# Permits custom-signed TeleService/Settings/SystemUI to interoperate with Oplus platform-signed framework-res and sharedUserId packages.
+# Run scripts/render_signer_patch.py --cert /path/to/your-cert.x509.pem to stamp your own certificate SHA-256 before applying.
+--- a/com/android/server/pm/PackageManagerServiceUtils.smali	2026-11-26 10:17:34.136343204 +0700
++++ b/com/android/server/pm/PackageManagerServiceUtils.smali	2026-11-26 10:17:36.915633028 +0700
+@@ -437,8 +437,19 @@
+ 
+     move-result-object v0
+ 
++    invoke-static {p1, v0}, Lcom/android/server/pm/PackageManagerServiceUtils;->isDadaPlatformCompat(Landroid/content/pm/SigningDetails;Landroid/content/pm/SigningDetails;)Z
++
++    move-result v2
++
++    if-eqz v2, :cond_c
++
++    const/4 v2, 0x1
++
++    return v2
++
+     .line 606
+     .local v0, "sharedUserSigningDetails":Landroid/content/pm/SigningDetails;
++    :cond_c
+     nop
+ 
+     .line 607
+@@ -452,85 +463,85 @@
+ 
+     const/4 v4, 0x1
+ 
+-    if-nez v2, :cond_17
++    if-nez v2, :cond_1f
+ 
+     .line 608
+     invoke-virtual {v0, p1, v1}, Landroid/content/pm/SigningDetails;->checkCapability(Landroid/content/pm/SigningDetails;I)Z
+ 
+     move-result v2
+ 
+-    if-eqz v2, :cond_15
++    if-eqz v2, :cond_1d
+ 
+-    goto :goto_17
++    goto :goto_1f
+ 
+-    :cond_15
++    :cond_1d
+     move v2, v3
+ 
+-    goto :goto_18
++    goto :goto_20
+ 
+-    :cond_17
+-    :goto_17
++    :cond_1f
++    :goto_1f
+     move v2, v4
+ 
+     .line 616
+     .local v2, "capabilityGranted":Z
+-    :goto_18
+-    if-eqz v2, :cond_1d
++    :goto_20
++    if-eqz v2, :cond_25
+ 
+-    if-eqz p3, :cond_1d
++    if-eqz p3, :cond_25
+ 
+     .line 617
+     return v4
+ 
+     .line 623
+-    :cond_1d
+-    if-nez v2, :cond_29
++    :cond_25
++    if-nez v2, :cond_31
+ 
+     invoke-virtual {v0, p1}, Landroid/content/pm/SigningDetails;->hasAncestor(Landroid/content/pm/SigningDetails;)Z
+ 
+     move-result v5
+ 
+-    if-eqz v5, :cond_29
++    if-eqz v5, :cond_31
+ 
+     .line 624
+-    if-ne p3, v1, :cond_28
++    if-ne p3, v1, :cond_30
+ 
+     .line 625
+     return v4
+ 
+     .line 627
+-    :cond_28
++    :cond_30
+     return v3
+ 
+     .line 635
+-    :cond_29
+-    if-nez v2, :cond_35
++    :cond_31
++    if-nez v2, :cond_3d
+ 
+     invoke-virtual {p1, v0}, Landroid/content/pm/SigningDetails;->hasAncestor(Landroid/content/pm/SigningDetails;)Z
+ 
+     move-result v5
+ 
+-    if-eqz v5, :cond_35
++    if-eqz v5, :cond_3d
+ 
+     .line 636
+-    if-eqz p3, :cond_34
++    if-eqz p3, :cond_3c
+ 
+     .line 637
+     return v4
+ 
+     .line 639
+-    :cond_34
++    :cond_3c
+     return v3
+ 
+     .line 645
+-    :cond_35
+-    if-nez v2, :cond_38
++    :cond_3d
++    if-nez v2, :cond_40
+ 
+     .line 646
+     return v3
+ 
+     .line 651
+-    :cond_38
++    :cond_40
+     nop
+ 
+     .line 652
+@@ -544,19 +555,19 @@
+ 
+     move-result v6
+ 
+-    if-eqz v6, :cond_8b
++    if-eqz v6, :cond_93
+ 
+     .line 654
+     invoke-virtual {v5}, Landroid/util/ArraySet;->iterator()Ljava/util/Iterator;
+ 
+     move-result-object v6
+ 
+-    :goto_47
++    :goto_4f
+     invoke-interface {v6}, Ljava/util/Iterator;->hasNext()Z
+ 
+     move-result v7
+ 
+-    if-eqz v7, :cond_8b
++    if-eqz v7, :cond_93
+ 
+     invoke-interface {v6}, Ljava/util/Iterator;->next()Ljava/lang/Object;
+ 
+@@ -576,14 +587,14 @@
+ 
+     move-result v9
+ 
+-    if-eqz v9, :cond_8a
++    if-eqz v9, :cond_92
+ 
+     .line 659
+     invoke-virtual {p1, v8, v1}, Landroid/content/pm/SigningDetails;->checkCapability(Landroid/content/pm/SigningDetails;I)Z
+ 
+     move-result v9
+ 
+-    if-nez v9, :cond_8a
++    if-nez v9, :cond_92
+ 
+     .line 661
+     new-instance v1, Ljava/lang/StringBuilder;
+@@ -630,11 +641,11 @@
+     .line 668
+     .end local v7    # "shUidPkgSetting":Lcom/android/server/pm/pkg/PackageStateInternal;
+     .end local v8    # "shUidSigningDetails":Landroid/content/pm/SigningDetails;
+-    :cond_8a
+-    goto :goto_47
++    :cond_92
++    goto :goto_4f
+ 
+     .line 670
+-    :cond_8b
++    :cond_93
+     return v4
+ .end method
+ 
+@@ -1151,6 +1162,17 @@
+     .param p1, "sd2"    # Landroid/content/pm/SigningDetails;
+ 
+     .line 341
++    invoke-static {p0, p1}, Lcom/android/server/pm/PackageManagerServiceUtils;->isDadaPlatformCompat(Landroid/content/pm/SigningDetails;Landroid/content/pm/SigningDetails;)Z
++
++    move-result v0
++
++    if-eqz v0, :cond_8
++
++    const/4 v0, 0x0
++
++    return v0
++
++    :cond_8
+     invoke-virtual {p0}, Landroid/content/pm/SigningDetails;->getSignatures()[Landroid/content/pm/Signature;
+ 
+     move-result-object v0
+@@ -4227,6 +4249,195 @@
+     return v0
+ .end method
+ 
++.method public static isDadaPlatformCompat(Landroid/content/pm/SigningDetails;Landroid/content/pm/SigningDetails;)Z
++    .registers 6
++
++    const/4 v0, 0x0
++
++    if-eqz p0, :cond_2d
++
++    if-nez p1, :cond_6
++
++    goto :goto_2d
++
++    :cond_6
++    const/16 v1, 0x20
++
++    new-array v2, v1, [B
++
++    fill-array-data v2, :array_2e
++
++    new-array v1, v1, [B
++
++    fill-array-data v1, :array_42
++
++    invoke-virtual {p0, v2}, Landroid/content/pm/SigningDetails;->hasSha256Certificate([B)Z
++
++    move-result v3
++
++    if-eqz v3, :cond_20
++
++    invoke-virtual {p1, v1}, Landroid/content/pm/SigningDetails;->hasSha256Certificate([B)Z
++
++    move-result v3
++
++    if-eqz v3, :cond_20
++
++    const/4 v0, 0x1
++
++    return v0
++
++    :cond_20
++    invoke-virtual {p0, v1}, Landroid/content/pm/SigningDetails;->hasSha256Certificate([B)Z
++
++    move-result v1
++
++    if-eqz v1, :cond_2d
++
++    invoke-virtual {p1, v2}, Landroid/content/pm/SigningDetails;->hasSha256Certificate([B)Z
++
++    move-result v1
++
++    if-eqz v1, :cond_2d
++
++    const/4 v0, 0x1
++
++    :cond_2d
++    :goto_2d
++    return v0
++
++    :array_2e
++    .array-data 1
++        -0x79t
++        -0x65t
++        -0x6et
++        0x49t
++        0x1dt
++        0x4bt
++        -0x7at
++        0x23t
++        0x22t
++        0x7at
++        0x6t
++        -0x1at
++        -0xct
++        -0x24t
++        0x63t
++        -0x45t
++        -0x2et
++        -0x68t
++        -0x33t
++        0x3at
++        -0x27t
++        0x1bt
++        0x3at
++        0x1ct
++        -0x5et
++        0x5dt
++        -0x7ct
++        -0x63t
++        -0x5et
++        0x4bt
++        -0x4dt
++        -0x40t
++    .end array-data
++
++    :array_42
++    .array-data 1
++        -0x1ct
++        -0x68t
++        0x2t
++        0x40t
++        -0x6bt
++        -0x7ct
++        -0x32t
++        0x53t
++        0x15t
++        0x2at
++        -0x70t
++        0x0t
++        -0x7et
++        0xat
++        0x51t
++        -0x1ct
++        -0x6t
++        -0x76t
++        0x72t
++        0x3bt
++        0x7bt
++        -0x34t
++        0x26t
++        0x3et
++        0x33t
++        0x52t
++        0x40t
++        -0x54t
++        -0xft
++        0x0t
++        -0x41t
++        -0x62t
++    .end array-data
++.end method
++
++.method public static isDadaSigner(Landroid/content/pm/SigningDetails;)Z
++    .registers 2
++
++    if-nez p0, :cond_4
++
++    const/4 v0, 0x0
++
++    return v0
++
++    :cond_4
++    const/16 v0, 0x20
++
++    new-array v0, v0, [B
++
++    fill-array-data v0, :array_10
++
++    invoke-virtual {p0, v0}, Landroid/content/pm/SigningDetails;->hasSha256Certificate([B)Z
++
++    move-result v0
++
++    return v0
++
++    :array_10
++    .array-data 1
++        -0x79t
++        -0x65t
++        -0x6et
++        0x49t
++        0x1dt
++        0x4bt
++        -0x7at
++        0x23t
++        0x22t
++        0x7at
++        0x6t
++        -0x1at
++        -0xct
++        -0x24t
++        0x63t
++        -0x45t
++        -0x2et
++        -0x68t
++        -0x33t
++        0x3at
++        -0x27t
++        0x1bt
++        0x3at
++        0x1ct
++        -0x5et
++        0x5dt
++        -0x7ct
++        -0x63t
++        -0x5et
++        0x4bt
++        -0x4dt
++        -0x40t
++    .end array-data
++.end method
++
+ .method public static isDowngradePermitted(IZ)Z
+     .registers 7
+     .param p0, "installFlags"    # I
+@@ -6431,7 +6642,7 @@
+ 
+     const/4 v4, 0x1
+ 
+-    if-eqz v2, :cond_96
++    if-eqz v2, :cond_a3
+ 
+     .line 489
+     nop
+@@ -6475,9 +6686,24 @@
+     .line 498
+     .local v2, "match":Z
+     :goto_2c
+-    if-eqz v2, :cond_3c
++    if-nez v2, :cond_39
++
++    invoke-virtual {p0}, Lcom/android/server/pm/PackageSetting;->getSigningDetails()Landroid/content/pm/SigningDetails;
+ 
+-    if-eqz p2, :cond_3c
++    move-result-object v6
++
++    invoke-static {p3, v6}, Lcom/android/server/pm/PackageManagerServiceUtils;->isDadaPlatformCompat(Landroid/content/pm/SigningDetails;Landroid/content/pm/SigningDetails;)Z
++
++    move-result v6
++
++    if-eqz v6, :cond_39
++
++    move v2, v4
++
++    :cond_39
++    if-eqz v2, :cond_49
++
++    if-eqz p2, :cond_49
+ 
+     .line 499
+     invoke-virtual {p2}, Lcom/android/server/pm/PackageSetting;->getSigningDetails()Landroid/content/pm/SigningDetails;
+@@ -6486,7 +6712,7 @@
+ 
+     sget-object v7, Landroid/content/pm/SigningDetails;->UNKNOWN:Landroid/content/pm/SigningDetails;
+ 
+-    if-eq v6, v7, :cond_3c
++    if-eq v6, v7, :cond_49
+ 
+     .line 500
+     invoke-static {v0, p3, p2}, Lcom/android/server/pm/PackageManagerServiceUtils;->matchSignatureInSystem(Ljava/lang/String;Landroid/content/pm/SigningDetails;Lcom/android/server/pm/PackageSetting;)Z
+@@ -6494,10 +6720,10 @@
+     move-result v2
+ 
+     .line 503
+-    :cond_3c
+-    if-nez v2, :cond_49
++    :cond_49
++    if-nez v2, :cond_56
+ 
+-    if-eqz p4, :cond_49
++    if-eqz p4, :cond_56
+ 
+     .line 504
+     invoke-virtual {p0}, Lcom/android/server/pm/PackageSetting;->getSignatures()Lcom/android/server/pm/PackageSignatures;
+@@ -6512,10 +6738,10 @@
+     move v1, v2
+ 
+     .line 508
+-    :cond_49
+-    if-nez v2, :cond_67
++    :cond_56
++    if-nez v2, :cond_74
+ 
+-    if-eqz p5, :cond_67
++    if-eqz p5, :cond_74
+ 
+     .line 509
+     nop
+@@ -6530,7 +6756,7 @@
+ 
+     move-result v6
+ 
+-    if-nez v6, :cond_65
++    if-nez v6, :cond_72
+ 
+     .line 517
+     invoke-virtual {p0}, Lcom/android/server/pm/PackageSetting;->getSigningDetails()Landroid/content/pm/SigningDetails;
+@@ -6542,27 +6768,27 @@
+ 
+     move-result v5
+ 
+-    if-eqz v5, :cond_63
++    if-eqz v5, :cond_70
+ 
+-    goto :goto_65
++    goto :goto_72
+ 
+-    :cond_63
++    :cond_70
+     move v5, v3
+ 
+-    goto :goto_66
++    goto :goto_73
+ 
+-    :cond_65
+-    :goto_65
++    :cond_72
++    :goto_72
+     move v5, v4
+ 
+-    :goto_66
++    :goto_73
+     move v2, v5
+ 
+     .line 521
+-    :cond_67
+-    if-nez v2, :cond_73
++    :cond_74
++    if-nez v2, :cond_80
+ 
+-    if-eqz p6, :cond_73
++    if-eqz p6, :cond_80
+ 
+     .line 525
+     invoke-virtual {p0}, Lcom/android/server/pm/PackageSetting;->getSigningDetails()Landroid/content/pm/SigningDetails;
+@@ -6574,13 +6800,13 @@
+     move-result v2
+ 
+     .line 528
+-    :cond_73
+-    if-eqz v2, :cond_76
++    :cond_80
++    if-eqz v2, :cond_83
+ 
+-    goto :goto_96
++    goto :goto_a3
+ 
+     .line 529
+-    :cond_76
++    :cond_83
+     new-instance v3, Lcom/android/server/pm/PackageManagerException;
+ 
+     new-instance v4, Ljava/lang/StringBuilder;
+@@ -6615,9 +6841,9 @@
+ 
+     .line 535
+     .end local v2    # "match":Z
+-    :cond_96
+-    :goto_96
+-    if-eqz p1, :cond_12e
++    :cond_a3
++    :goto_a3
++    if-eqz p1, :cond_145
+ 
+     .line 536
+     invoke-virtual {p1}, Lcom/android/server/pm/SharedUserSetting;->getSigningDetails()Landroid/content/pm/SigningDetails;
+@@ -6626,7 +6852,7 @@
+ 
+     sget-object v5, Landroid/content/pm/SigningDetails;->UNKNOWN:Landroid/content/pm/SigningDetails;
+ 
+-    if-eq v2, v5, :cond_12e
++    if-eq v2, v5, :cond_145
+ 
+     .line 542
+     nop
+@@ -6640,27 +6866,27 @@
+ 
+     move-result-object v2
+ 
+-    if-eqz v2, :cond_ad
++    if-eqz v2, :cond_ba
+ 
+     .line 544
+     move v2, v4
+ 
+-    goto :goto_ae
++    goto :goto_bb
+ 
+-    :cond_ad
++    :cond_ba
+     move v2, v3
+ 
+     .line 542
+-    :goto_ae
++    :goto_bb
+     invoke-static {v0, p3, p1, v2}, Lcom/android/server/pm/PackageManagerServiceUtils;->canJoinSharedUserId(Ljava/lang/String;Landroid/content/pm/SigningDetails;Lcom/android/server/pm/SharedUserSetting;I)Z
+ 
+     move-result v2
+ 
+     .line 545
+     .restart local v2    # "match":Z
+-    if-nez v2, :cond_bc
++    if-nez v2, :cond_c9
+ 
+-    if-eqz p4, :cond_bc
++    if-eqz p4, :cond_c9
+ 
+     .line 546
+     iget-object v5, p1, Lcom/android/server/pm/SharedUserSetting;->signatures:Lcom/android/server/pm/PackageSignatures;
+@@ -6670,10 +6896,10 @@
+     move-result v2
+ 
+     .line 549
+-    :cond_bc
+-    if-nez v2, :cond_d8
++    :cond_c9
++    if-nez v2, :cond_e5
+ 
+-    if-eqz p5, :cond_d8
++    if-eqz p5, :cond_e5
+ 
+     .line 550
+     iget-object v5, p1, Lcom/android/server/pm/SharedUserSetting;->signatures:Lcom/android/server/pm/PackageSignatures;
+@@ -6687,7 +6913,7 @@
+ 
+     move-result v5
+ 
+-    if-nez v5, :cond_d5
++    if-nez v5, :cond_e2
+ 
+     iget-object v5, p1, Lcom/android/server/pm/SharedUserSetting;->signatures:Lcom/android/server/pm/PackageSignatures;
+ 
+@@ -6698,24 +6924,24 @@
+ 
+     move-result v5
+ 
+-    if-eqz v5, :cond_d6
++    if-eqz v5, :cond_e3
+ 
+-    :cond_d5
++    :cond_e2
+     move v3, v4
+ 
+-    :cond_d6
++    :cond_e3
+     move v2, v3
+ 
+     .line 559
+     or-int/2addr v1, v2
+ 
+     .line 561
+-    :cond_d8
++    :cond_e5
+     const-string v3, "Package "
+ 
+     const/4 v4, -0x8
+ 
+-    if-eqz v2, :cond_105
++    if-eqz v2, :cond_11c
+ 
+     .line 569
+     iget-object v5, p1, Lcom/android/server/pm/SharedUserSetting;->signatures:Lcom/android/server/pm/PackageSignatures;
+@@ -6726,12 +6952,23 @@
+ 
+     move-result v5
+ 
+-    if-eqz v5, :cond_e8
++    if-nez v5, :cond_fc
++
++    iget-object v5, p1, Lcom/android/server/pm/SharedUserSetting;->signatures:Lcom/android/server/pm/PackageSignatures;
++
++    iget-object v5, v5, Lcom/android/server/pm/PackageSignatures;->mSigningDetails:Landroid/content/pm/SigningDetails;
++
++    invoke-static {p3, v5}, Lcom/android/server/pm/PackageManagerServiceUtils;->isDadaPlatformCompat(Landroid/content/pm/SigningDetails;Landroid/content/pm/SigningDetails;)Z
++
++    move-result v5
++
++    :cond_fc
++    if-eqz v5, :cond_ff
+ 
+-    goto :goto_12e
++    goto :goto_145
+ 
+     .line 571
+-    :cond_e8
++    :cond_ff
+     new-instance v5, Lcom/android/server/pm/PackageManagerException;
+ 
+     new-instance v6, Ljava/lang/StringBuilder;
+@@ -6761,7 +6998,7 @@
+     throw v5
+ 
+     .line 562
+-    :cond_105
++    :cond_11c
+     new-instance v5, Lcom/android/server/pm/PackageManagerException;
+ 
+     new-instance v6, Ljava/lang/StringBuilder;
+@@ -6804,8 +7041,8 @@
+ 
+     .line 576
+     .end local v2    # "match":Z
+-    :cond_12e
+-    :goto_12e
++    :cond_145
++    :goto_145
+     return v1
+ .end method
+ 

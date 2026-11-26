@@ -2,7 +2,7 @@
 
 Persistent dual-mode **SIM 2 (eSIM ↔ Physical SIM 2)** hardware routing, **OpenEUICC** LPA integration, automatic `N3Owner` endpoint death recovery, and a native **ColorOS 17 COUI `Manage eSIM`** UI for **Xiaomi 15 (`dada`, SM8750)** ported ROMs (ColorOS 17 V6 CN / Android 17, API 37).
 
-> **Note:** This is a standalone developer integration repository containing clean source code, unified `.patch` files, SELinux/init configs, and build scripts. No prebuilt `.apk`/`.jar` binaries, ROM images, or signing keystores are included.
+> **Note:** This is a standalone developer integration repository containing clean source code, unified `.patch` files, SELinux/init configs, and build scripts (verified through **ColorOS 17 V6 MOD `v7.3.1`** pure non-root clean flash). No prebuilt `.apk`/`.jar` binaries, ROM images, or signing keystores are included. For the full all-in-one ColorOS 17 V6 mod suite, see [`ampereforest/ColorOS-V6-Standalone-Mods`](https://github.com/ampereforest/ColorOS-V6-Standalone-Mods); for thermal/idle/IMS optimizations (including the `v7.3.1` `QtiImsExtConnector` bind-storm fix), see [`ampereforest/coloros_heat_optimization_findings`](https://github.com/ampereforest/coloros_heat_optimization_findings).
 
 ---
 
@@ -23,7 +23,7 @@ Persistent dual-mode **SIM 2 (eSIM ↔ Physical SIM 2)** hardware routing, **Ope
 | **`n3-route-v2`** (native daemon) | `integration/native/`, `config/selinux/` | `init`-managed native listener (`u:r:n3_route:s0`) verifying `SO_PEERCRED`/`SO_PEERSEC` (`UID 1000` + `u:r:system_server:s0`) and executing fixed non-destructive `/vendor/bin/mtb` route selectors (`1` = eSIM, `2` = pSIM2; destructive selector `5` is never exposed). |
 | **`n3-runtime-v2`** (`system_server` service) | `integration/owner/`, `patches/n3-runtime-v2-death-recovery.patch` | Loaded from `/system/framework/n3-runtime-v2.jar` via `SystemServer.startN3OwnerLifecycle()`. Owns route admission, durable journal, LPA leases (`N3Lease`), and `linkToDeath()` automatic provider handoff recovery. |
 | **`OpenEUICC` Bridge** (LPA provider) | `patches/openeuicc-dada.patch`, `integration/provider-additions/` | Privileged `/product/priv-app/OpenEUICC` provider exposing signature-protected `DadaEsimBridgeService` (`IDadaEsimBridge`) and `N3EndpointReceiver`. |
-| **Framework & Telephony Patches** | `patches/r1/`, `patches/r2/`, `patches/r3/`, `patches/services-n3-and-selinuxmmac.patch`, `patches/teleservice-manage-esim-entry.patch` | Preserves SIM 2 route across Oplus forced-type checks (`R1`), bridges `EuiccConnector` (`R2`), reconciles per-card embedded subscriptions (`R3`), boots `N3SystemService` + `SELinuxMMAC` compat, and adds the **Manage eSIM** row in `TeleService` (`Mobile network`). |
+| **Framework & Telephony Patches** | `patches/r1/`, `patches/r2/`, `patches/r3/`, `patches/services-n3-and-selinuxmmac.patch`, `patches/services-platform-signer-compat.patch`, `patches/teleservice-manage-esim-entry.patch` | Preserves SIM 2 route across Oplus forced-type checks (`R1`), bridges `EuiccConnector` (`R2`), reconciles per-card embedded subscriptions (`R3`), boots `N3SystemService` + `SELinuxMMAC` & `PackageManagerServiceUtils.isDadaPlatformCompat` signer compat, and adds the **Manage eSIM** row in `TeleService` (`Mobile network`). |
 | **`DadaEsimUI`** (ColorOS 17 COUI app) | `dada-esim-ui/` | Standalone Jetpack Compose UI (`com.dada.coloros.esim`) signed with the same release certificate as `OpenEUICC` to bind `IDadaEsimBridge` securely. |
 
 ### SIM Slot Geometry (`port:physicalSlot:logicalSlot`)
@@ -50,8 +50,12 @@ keytool -genkeypair -v \
   -alias esim-release -keyalg RSA -keysize 4096 -validity 10000
 ```
 
-Extract the lowercase SHA-256 hex digest of your certificate and update `CERT_SHA256` in:
-- `integration/owner/org/sourceowned/n3/runtime/v2/CallerPolicy.java`
+Extract your certificate (`.x509.pem` or lowercase 64-hex SHA-256 digest) and run `scripts/render_signer_patch.py` to stamp your own signing identity into **both** `CallerPolicy.java` and `patches/services-platform-signer-compat.patch` (`PackageManagerServiceUtils.isDadaPlatformCompat` & `isDadaSigner`):
+
+```bash
+python3 scripts/render_signer_patch.py --cert /path/to/esim-release.x509.pem
+# Or pass --sha256 <64-hex-chars> directly
+```
 
 ### 2. Build `n3-runtime-v2.jar` & `n3-route-v2`
 
@@ -95,7 +99,8 @@ apksigner sign --ks /path/to/esim-release.p12 --ks-type PKCS12 \
 ### 5. Apply Framework, Telephony & ROM Configs
 
 1. Apply the unified patches in `patches/`:
-   - `patches/services-n3-and-selinuxmmac.patch` → `services.jar` (`SystemServer.startN3OwnerLifecycle` + `SELinuxMMAC`)
+   - `patches/services-n3-and-selinuxmmac.patch` → `services.jar` (`SystemServer.startN3OwnerLifecycle` in `classes.dex` + `SELinuxMMAC` in `classes3.dex`)
+   - `patches/services-platform-signer-compat.patch` → `services.jar` (`PackageManagerServiceUtils.isDadaPlatformCompat` & `isDadaSigner` in `classes3.dex`, required so re-signed `TeleService.apk` can share `android.uid.phone` with Oplus platform-signed APKs)
    - `patches/r1/`, `patches/r2/`, `patches/r3/` → `telephony-common` / `oplus-telephony`
    - `patches/teleservice-manage-esim-entry.patch` → `TeleService.apk` (`Settings → Mobile network → Manage eSIM`)
 2. Install built artifacts and configs into their matching partitions:
